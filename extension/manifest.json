@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "HomeKTV · B站局域网点歌",
+  "version": "0.3.2",
+  "description": "在B站点歌，在客厅一起唱。支持Chrome/Edge和手机网页点歌器。",
+  "permissions": ["storage", "tabs"],
+  "optional_host_permissions": ["http://*/*", "https://*/*"],
+  "background": {"service_worker": "background.js"},
+  "action": {"default_title": "打开 HomeKTV 控制台"},
+  "content_scripts": [{"matches": ["https://www.bilibili.com/*", "https://search.bilibili.com/*"], "js": ["content.js"], "run_at": "document_start"}, {"matches": ["https://search.bilibili.com/*"], "js": ["search-reader.js"], "run_at": "document_idle"}]
+}

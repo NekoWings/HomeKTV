@@ -1,0 +1,6 @@
+{
+  "name": "home-ktv", "version": "0.3.2", "private": true, "type": "module",
+  "description": "B站局域网点歌器与Chrome/Edge扩展",
+  "scripts": { "start": "node server.mjs", "test": "node --test" },
+  "engines": { "node": ">=20" }
+}
