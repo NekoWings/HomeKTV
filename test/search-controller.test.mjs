@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import { readFileSync } from 'node:fs';
 
-async function controllerHarness() {
-  let time = 1000, nextId = 10, job = { id: 'job', token: 'token', query: '晴天 KTV 伴奏', page: 1 };
+async function controllerHarness(source = 'bilibili') {
+  let time = 1000, nextId = 10, job = { id: 'job', token: 'token', source, query: '晴天 KTV 伴奏', page: 1 };
   const tabs = new Map(), created = [], reports = [], nodes = new Map(), reloads = [], windows = [];
   const state = { current: null, queue: [], desired: 'paused', hostOnline: true, status: {} };
   const context = vm.createContext({
@@ -99,4 +99,18 @@ test('dedicated player opens in its own fullscreen window and reuses it for next
   await h.context.control({ ...state, current: { ...state.current, id: 'b' } });
   assert.equal(h.created.length, 1); assert.equal(h.windows.length, 1);
   await h.context.closePlayer(); assert.equal(h.tabs.size, 0);
+});
+
+
+test('YouTube search uses its own background results page and mixed playback keeps video identity', async () => {
+  const h = await controllerHarness('youtube');
+  await h.context.searchStep();
+  const search = new URL(h.created[0].url);
+  assert.equal(search.hostname, 'www.youtube.com'); assert.equal(search.pathname, '/results');
+  assert.equal(search.searchParams.get('search_query'), '晴天 KTV 伴奏');
+  assert.equal(h.created[0].active, false);
+  const state = { current: { id: 'yt', url: 'https://www.youtube.com/watch?v=k9OCGQl5HMI' }, desired: 'playing', queue: [], status: {} };
+  await h.context.control(state);
+  const player = new URL(h.created[1].url);
+  assert.equal(player.searchParams.get('v'), 'k9OCGQl5HMI'); assert.equal(player.searchParams.get('ktv_song'), 'yt');
 });

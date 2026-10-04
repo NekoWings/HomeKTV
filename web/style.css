@@ -729,26 +729,20 @@ ol {
   color:#9f7e92;
   font:9px monospace
 }
-progress {
-  display:block;
+#progress {
   flex:1;
   min-width:0;
-  height:3px;
+  width:100%;
+  height:24px;
+  padding:0;
+  margin:0;
   border:0;
-  border-radius:5px;
-  overflow:hidden;
-  background:#ffffff0b;
-  accent-color:var(--accent)
+  accent-color:var(--accent);
+  cursor:pointer;
+  background:transparent
 }
-progress::-webkit-progress-bar {
-  background:#ffffff0b
-}
-progress::-webkit-progress-value {
-  background:linear-gradient(90deg,#c54387,#ff8fc2)
-}
-progress::-moz-progress-bar {
-  background:var(--accent)
-}
+#progress:disabled { cursor:default; opacity:0.45 }
+#progress:focus-visible { outline:2px solid var(--accent); outline-offset:3px }
 .player-end {
   flex:1;
   display:flex;

@@ -20,3 +20,9 @@ test('metadata failures can retry and arbitrary URLs never reach upstream', asyn
   await assert.rejects(service.get(fixture.data.bvid), /分P信息/);
   await assert.rejects(service.get(fixture.data.bvid), /分P信息/); assert.equal(calls, 2);
 });
+
+test('YouTube never reaches Bilibili metadata API', async () => {
+  let calls = 0; const service = new VideoParts(async () => { calls++; });
+  await assert.rejects(service.get('https://youtu.be/k9OCGQl5HMI'), /YouTube/);
+  assert.equal(calls, 0);
+});

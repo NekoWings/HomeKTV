@@ -1,11 +1,51 @@
 {
   "manifest_version": 3,
-  "name": "HomeKTV · B站局域网点歌",
+  "name": "HomeKTV · B站 / YouTube 点歌",
   "version": "0.4.0",
-  "description": "在B站点歌，在客厅一起唱。支持Chrome/Edge和手机网页点歌器。",
-  "permissions": ["storage", "tabs"],
-  "optional_host_permissions": ["http://*/*", "https://*/*"],
-  "background": {"service_worker": "background.js"},
-  "action": {"default_title": "打开 HomeKTV 控制台"},
-  "content_scripts": [{"matches": ["https://www.bilibili.com/*", "https://search.bilibili.com/*"], "js": ["content.js"], "run_at": "document_start"}, {"matches": ["https://search.bilibili.com/*"], "js": ["search-reader.js"], "run_at": "document_idle"}]
+  "description": "B站和 YouTube 混合歌单，支持电脑和手机局域网点歌。",
+  "permissions": [
+    "storage",
+    "tabs"
+  ],
+  "optional_host_permissions": [
+    "http://*/*",
+    "https://*/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "打开 HomeKTV 控制台"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.bilibili.com/*",
+        "https://search.bilibili.com/*",
+        "https://www.youtube.com/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_start"
+    },
+    {
+      "matches": [
+        "https://search.bilibili.com/*"
+      ],
+      "js": [
+        "search-reader.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://www.youtube.com/*"
+      ],
+      "js": [
+        "youtube-search-reader.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ]
 }

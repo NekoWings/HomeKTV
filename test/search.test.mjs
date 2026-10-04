@@ -51,3 +51,17 @@ test('results accept only canonical B站 links and approved HTTPS cover hosts', 
   const result = queue.finish({ ...task, results: [video, video, { ...video, url: 'javascript:alert(1)' }, { ...video, url: 'BV1u441117ko', cover: 'https://hdslb.com.evil.test/x' }] }, 'host');
   assert.equal(result.results.length, 2); assert.equal(result.results[0].cover, video.cover); assert.equal(result.results[1].cover, '');
 });
+
+test('YouTube jobs use separate caches, restrict pagination and filter source and covers', () => {
+  const queue = new SearchQueue();
+  const yt = queue.create({ query: 'song', source: 'youtube', mode: 'plain' }, true);
+  assert.equal(yt.source, 'youtube');
+  assert.notEqual(queue.create({ query: 'song', mode: 'plain' }, true).id, yt.id);
+  const task = queue.claim('host');
+  const result = queue.finish({ ...task, results: [video, { url: 'https://youtu.be/k9OCGQl5HMI', title: 'Song', cover: 'https://i.ytimg.com/vi/k9OCGQl5HMI/hqdefault.jpg' }, { url: 'https://youtube.com/watch?v=zxjFe42SA8I', title: 'Other', cover: 'https://evil.test/img.jpg' }] }, 'host');
+  assert.equal(result.results.length, 2); assert.match(result.results[0].cover, /ytimg/); assert.equal(result.results[1].cover, '');
+  assert.equal(queue.create({ query: 'song', source: 'youtube', mode: 'plain' }, false).id, yt.id);
+  assert.equal(queue.create({ query: 'song', source: 'youtube' }, true).query, 'song karaoke');
+  assert.throws(() => queue.create({ query: 'song', source: 'youtube', page: 2 }, true), /首批/);
+  assert.throws(() => queue.create({ query: 'song', source: 'unknown' }, true), /来源/);
+});

@@ -1,5 +1,6 @@
 const $ = id => document.getElementById(id);
-let selectedInviteUrl = '';
+const isYouTube = song => { try { return new URL(song?.url).hostname === 'www.youtube.com'; } catch { return false; } };
+let selectedInviteUrl = '', seekingSongId = null;
 function showInvite(url) {
   selectedInviteUrl = url || '';
   $('inviteUrl').hidden = $('inviteQr').hidden = !url;
@@ -121,7 +122,7 @@ function drawSetlist(next) {
       }
     } else {
       actions.append(songButton('下一首', 'up', () => act({ action: 'top', id: song.id }, '已安排为下一首')),
-        songButton('版本', 'sliders', () => selectPart(song, { switching: true })),
+        ...(!isYouTube(song) ? [songButton('版本', 'sliders', () => selectPart(song, { switching: true }))] : []),
         songButton('移除', 'close', () => act({ action: 'remove', id: song.id }, '已移除歌曲')));
     }
     li.append(number, info, actions); return li;
@@ -143,15 +144,36 @@ function render(next) {
   $('connection').classList.toggle('online', next.hostOnline);
   $('current').textContent = next.current?.title || '还没有点歌'; $('current').title = next.current?.title || '';
   for (const id of ['play', 'pause', 'next', 'stop', 'currentPart', 'moreOpen']) $(id).disabled = !next.current;
+  $('currentPart').hidden = isYouTube(next.current);
   const playing = next.desired === 'playing'; $('play').hidden = playing; $('pause').hidden = !playing;
   const status = next.hostOnline ? `${next.status.message || '等待播放'}${next.desired === 'paused' ? ' · 已暂停' : next.desired === 'stopped' ? ' · 已关闭播放' : ''}` : '主机离线 · 请在扩展控制台接管播放';
   $('status').textContent = $('status').title = status;
-  $('progress').max = next.status.duration || 1; $('progress').value = next.status.time || 0;
-  $('elapsed').textContent = timeLabel(next.status.time); $('duration').textContent = timeLabel(next.status.duration);
+  $('progress').disabled = !next.current || !next.hostOnline || next.desired === 'stopped' || !(next.status.duration > 0);
+  if (seekingSongId && (seekingSongId !== next.current?.id || $('progress').disabled)) seekingSongId = null;
+  if (!seekingSongId) {
+    $('progress').max = next.status.duration || 1;
+    $('progress').value = next.seek?.time ?? next.status.time ?? 0;
+    $('elapsed').textContent = timeLabel(Number($('progress').value));
+  }
+  $('progress').setAttribute('aria-valuetext', `${timeLabel(Number($('progress').value))} / ${timeLabel(next.status.duration)}`);
+  $('duration').textContent = timeLabel(next.status.duration);
   drawSetlist(next);
 }
 async function refresh() { if (!joined || busy) return; busy = true; try { render(await api('state')); } catch (error) { $('connection').textContent = '连接中断'; $('connection').classList.remove('online'); notice(error.message); if (error.status === 401) { joined = false; keyRequired = true; $('keyField').hidden = false; $('key').required = true; $('joinHint').textContent = '本房间已启用口令，请输入主机设置的口令。'; hideRoom(); $('inviteKey').textContent = '本房间已启用口令，请输入口令加入。'; } } finally { busy = false; } }
 async function act(body, message = '已更新歌单') { try { render(await api('action', { ...body, requestId: `${Date.now()}-${Math.random()}` })); notice(message); } catch (error) { notice(error.message); } }
+$('progress').onpointerdown = () => { seekingSongId = state?.current?.id || null; };
+$('progress').oninput = () => {
+  seekingSongId ||= state?.current?.id || null;
+  $('elapsed').textContent = timeLabel(Number($('progress').value));
+};
+$('progress').onchange = async () => {
+  const id = seekingSongId, time = Number($('progress').value);
+  seekingSongId = null;
+  if (!id || id !== state?.current?.id || $('progress').disabled) return;
+  await act({ action: 'seek', id, time }, `已请求跳转到 ${timeLabel(time)}`);
+};
+$('progress').onpointerup = () => { setTimeout(() => { seekingSongId = null; }, 0); };
+$('progress').onpointercancel = $('progress').onblur = () => { seekingSongId = null; };
 $('joinForm').onsubmit = async event => { event.preventDefault(); key = $('key').value.trim(); localStorage.setItem('ktv-name', $('name').value.trim()); $('nickname').value = $('name').value.trim(); try { render(await api('state')); sessionStorage.setItem('ktv-key', key); notice('已加入房间，开始点歌吧。'); } catch (error) { notice(error.message); key = ''; } };
 async function add(first) {
   if (!$('addForm').reportValidity()) return;
@@ -195,7 +217,7 @@ function showSearchResults(results) {
   }));
 }
 async function search(page = 1, newQuery = false) {
-  if (newQuery) { searchRequest = { query: $('searchQuery').value.trim(), mode: $('searchMode').value }; localStorage.setItem('ktv-search-mode', searchRequest.mode); }
+  if (newQuery) { searchRequest = { query: $('searchQuery').value.trim(), mode: $('searchMode').value, source: $('searchSource').value }; localStorage.setItem('ktv-search-source', searchRequest.source); localStorage.setItem('ktv-search-mode', searchRequest.mode); }
   if (!searchRequest?.query) return;
   const generation = ++searchGeneration; $('searchWelcome').hidden = true; $('resultsScroll').scrollTop = 0;
   $('searchSubmit').disabled = true; $('searchPrev').hidden = true; $('searchNext').hidden = true; $('searchPage').textContent = '';
@@ -212,8 +234,8 @@ async function search(page = 1, newQuery = false) {
     if (generation !== searchGeneration) return;
     if (job.status === 'error') throw new Error(job.error);
     searchPage = page; showSearchResults(job.results || []);
-    $('searchMessage').textContent = job.results.length ? `找到 ${job.results.length} 个视频，多分P歌曲点歌时可选 On / Off Vocal 或其他版本。` : '没有找到相关视频，试试更短的歌名，或切换搜索模式。';
-    $('searchPage').textContent = `第 ${page} 页`; $('searchPrev').hidden = page === 1; $('searchNext').hidden = page >= 10 || !job.results.length;
+    $('searchMessage').textContent = job.results.length ? (searchRequest.source === 'youtube' ? `找到 ${job.results.length} 个 YouTube 视频；可细化关键词搜索其他版本。` : `找到 ${job.results.length} 个视频，多分P歌曲点歌时可选 On / Off Vocal 或其他版本。`) : '没有找到相关视频，试试更短的歌名，或切换搜索模式。';
+    $('searchPage').textContent = `第 ${page} 页`; $('searchPrev').hidden = page === 1; $('searchNext').hidden = searchRequest.source === 'youtube' || page >= 10 || !job.results.length;
   } catch (error) { if (generation === searchGeneration) $('searchMessage').textContent = error.message; }
   finally { if (generation === searchGeneration) $('searchSubmit').disabled = false; }
 }
@@ -221,6 +243,7 @@ $('searchForm').onsubmit = event => { event.preventDefault(); search(1, true); }
 $('searchPrev').onclick = () => search(searchPage - 1);
 $('searchNext').onclick = () => search(searchPage + 1);
 
+$('searchSource').value = localStorage.getItem('ktv-search-source') === 'youtube' ? 'youtube' : 'bilibili';
 const savedMode = localStorage.getItem('ktv-search-mode');
 if (['ktv', 'nicokara', 'plain'].includes(savedMode)) $('searchMode').value = savedMode;
 for (const button of document.querySelectorAll('[data-query]')) button.onclick = () => {
@@ -232,6 +255,10 @@ $('partsClose').onclick = () => $('partsDialog').close();
 $('partsDialog').addEventListener('close', () => { partSelection++; });
 $('currentPart').onclick = () => { if (state?.current) selectPart(state.current, { switching: true }); };
 async function selectPart(song, { first = false, switching = false } = {}) {
+  if (isYouTube(song)) {
+    if (switching) return notice('YouTube 视频没有分P，请搜索其他版本');
+    return act({ action: 'add', url: song.url, title: song.title, first, by: localStorage.getItem('ktv-name') || '朋友' }, `已点：${song.title}`);
+  }
   const selection = ++partSelection;
   $('partsSong').textContent = song.title;
   $('partsStatus').textContent = '正在读取视频版本…';

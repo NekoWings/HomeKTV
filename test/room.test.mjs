@@ -119,3 +119,39 @@ test('pause, stop, removal and version changes do not create history; history is
   const history = room.state.history; assert.equal(new Room({ history: [...history, ...history] }).state.history.length, 200);
   assert.equal(new Room({ history: 'invalid' }).state.history.length, 0);
 });
+
+test('seek validates current song and availability, preserves pause, deduplicates and clears on skip', () => {
+  const room = new Room(); add(room, 'A'); add(room, 'B');
+  const id = room.state.current.id;
+  const command = { action: 'seek', id, time: 25, requestId: 'seek-test' };
+  assert.throws(() => room.action(command), /接管/);
+  room.claim(hostId);
+  assert.throws(() => room.action(command), /进度/);
+  room.status = { duration: 60, time: 10 };
+  assert.throws(() => room.action({ ...command, id: 'old' }), /切换/);
+  assert.throws(() => room.action({ ...command, time: -1 }), /进度/);
+  room.action({ action: 'pause' });
+  room.action(command); const token = room.seek.id;
+  assert.equal(room.seek.time, 25); assert.equal(room.state.desired, 'paused');
+  room.action(command); assert.equal(room.seek.id, token);
+  room.action({ action: 'ended', id, hostId }); assert.equal(room.state.current.id, id);
+  room.action({ action: 'seek', id, time: 999 }); assert.equal(room.seek.time, 59.5);
+  room.action({ action: 'next', id }); assert.equal(room.seek, null);
+});
+
+test('YouTube URL formats normalize to one video and mix with Bilibili in the queue', () => {
+  const canonical = 'https://www.youtube.com/watch?v=k9OCGQl5HMI';
+  for (const input of [canonical + '&list=abc&t=20', 'https://youtu.be/k9OCGQl5HMI?si=abc', 'https://m.youtube.com/watch?v=k9OCGQl5HMI', 'https://www.youtube.com/shorts/k9OCGQl5HMI', 'https://youtube.com/live/k9OCGQl5HMI']) assert.equal(normalizeVideo(input), canonical);
+  for (const input of ['https://youtube.com/playlist?list=abc', 'https://youtube.com/watch?v=bad', 'https://youtube.com.evil.test/watch?v=k9OCGQl5HMI', 'https://user:pass@youtube.com/watch?v=k9OCGQl5HMI']) assert.throws(() => normalizeVideo(input));
+  const room = new Room(); add(room, 'B站');
+  room.action({ action: 'add', url: canonical });
+  room.action({ action: 'next', id: room.state.current.id });
+  assert.equal(room.state.current.url, canonical);
+  assert.match(room.state.current.title, /YouTube/);
+  assert.throws(() => room.action({ action: 'part', id: room.state.current.id, url: 'https://youtube.com/watch?v=zxjFe42SA8I' }), /分P/);
+  add(room, '下一首'); room.claim(hostId);
+  room.action({ action: 'ended', id: room.state.current.id, hostId });
+  assert.equal(room.state.current.title, '下一首');
+  room.action({ action: 'replay', id: room.state.history[0].id });
+  assert.equal(room.state.queue[0].url, canonical);
+});

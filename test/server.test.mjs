@@ -57,6 +57,12 @@ for (const roomKey of ['', 'test-room']) test(`HTTP ${roomKey ? 'protected' : 'o
     assert.equal(searchResult.status, 200);
     assert.equal((await api(`search/${search.data.id}`)).data.results[0].title, '晴天 KTV');
     assert.equal((await api('report', { hostId, id: state.current.id, message: '正在播放', time: 2, duration: 100 })).status, 200);
+    const sought = (await api('action', { action: 'seek', id: state.current.id, time: 30 })).data;
+    assert.equal(sought.seek.time, 30);
+    await api('report', { hostId, id: state.current.id, seekId: 'stale-token', time: 2, duration: 100 });
+    assert.equal((await api('state')).data.seek.id, sought.seek.id);
+    await api('report', { hostId, id: state.current.id, seekId: sought.seek.id, time: 30, duration: 100 });
+    assert.equal((await api('state')).data.seek, null);
     await Promise.all([api('action', { action: 'next', id: state.current.id }), api('action', { action: 'ended', id: state.current.id, hostId })]);
     state = (await api('state')).data; assert.equal(state.queue.length, 10);
     assert.equal(state.history.length, 1);

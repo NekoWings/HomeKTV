@@ -52,8 +52,9 @@ async function searchStep() {
     const tab = searchTab !== null ? await chrome.tabs.get(searchTab).catch(() => null) : null;
     if (!searchJob || searchJob.token !== job.token || !tab) {
       searchJob = job; searchStarted = Date.now(); searchSignature = ''; searchReloaded = false;
-      const url = new URL('https://search.bilibili.com/all');
-      url.searchParams.set('keyword', job.query); url.searchParams.set('page', job.page); url.searchParams.set('ktv_search', job.id);
+      const url = new URL(job.source === 'youtube' ? 'https://www.youtube.com/results' : 'https://search.bilibili.com/all');
+      url.searchParams.set(job.source === 'youtube' ? 'search_query' : 'keyword', job.query);
+      if (job.source !== 'youtube') url.searchParams.set('page', job.page); url.searchParams.set('ktv_search', job.id);
       if (tab) await chrome.tabs.update(searchTab, { url: url.href });
       else { searchTab = (await chrome.tabs.create({ url: url.href, active: false })).id; await chrome.storage.session.set({ searchTab }); }
       $('searchState').textContent = `正在帮朋友搜索：${job.query}`;
@@ -62,8 +63,8 @@ async function searchStep() {
     let result;
     try { result = await chrome.tabs.sendMessage(searchTab, { type: 'ktv-search-read', id: job.id, query: job.query }); } catch {}
     if (result?.blocked) {
-      await api('search/result', { hostId, id: job.id, token: job.token, error: 'B站显示验证或访问限制。请在主机点击「查看搜索页」，按页面提示处理后重新搜索。' });
-      searchJob = null; $('searchState').textContent = 'B站需要手动处理，请点击「查看搜索页」';
+      await api('search/result', { hostId, id: job.id, token: job.token, error: '视频来源显示验证或访问限制。请在主机点击「查看搜索页」，按页面提示处理后重新搜索。' });
+      searchJob = null; $('searchState').textContent = '搜索页需要手动处理，请点击「查看搜索页」';
       return;
     }
     if (result && !result.wrongPage && (result.results?.length || result.empty)) {
@@ -81,12 +82,12 @@ async function searchStep() {
     const elapsed = Date.now() - searchStarted;
     if (result?.shellReady && !result.wrongPage && !result.empty && !result.results?.length && !searchReloaded && elapsed >= 8000 && elapsed < 20000) {
       searchReloaded = true; searchSignature = '';
-      $('searchState').textContent = 'B站列表暂未加载，正在自动刷新一次…';
+      $('searchState').textContent = '搜索列表暂未加载，正在自动刷新一次…';
       await chrome.tabs.reload(searchTab);
       return;
     }
     if (Date.now() - searchStarted > 25000) {
-      await api('search/result', { hostId, id: job.id, token: job.token, error: '未能读取 B站搜索结果。请在主机点击「查看搜索页」，检查网络、登录或验证提示后重试。' });
+      await api('search/result', { hostId, id: job.id, token: job.token, error: '未能读取搜索结果。请在主机点击「查看搜索页」，检查网络、登录或验证提示后重试。' });
       searchJob = null; $('searchState').textContent = '搜索未完成，请点击「查看搜索页」检查 B站页面';
     }
   } catch (error) { $('searchState').textContent = `搜索连接失败：${error.message}`; }
@@ -121,7 +122,7 @@ async function control(next) {
     await chrome.tabs.update(playerTab, { url: url.href }); return;
   }
   try {
-    const report = await chrome.tabs.sendMessage(playerTab, { type: 'ktv-control', id: song.id, desired: next.desired, resumeTime: loadedResume });
+    const report = await chrome.tabs.sendMessage(playerTab, { type: 'ktv-control', id: song.id, desired: next.desired, resumeTime: loadedResume, seek: next.seek });
     if (!report) throw new Error('播放器未响应');
     if (report.ended) { draw(await api('action', { action: 'ended', id: song.id, hostId })); return; }
     if (report.wrongPage) {
@@ -130,7 +131,7 @@ async function control(next) {
     draw(await api('report', { hostId, id: song.id, ...report }));
   } catch (error) {
     if (Date.now() - navigatingAt > 20000) {
-      await api('report', { hostId, id: song.id, message: '播放页未就绪：请检查 B站登录、网络或刷新播放页。也可以手动切歌。' });
+      await api('report', { hostId, id: song.id, message: '播放页未就绪：请检查视频网站登录、网络或刷新播放页。也可以手动切歌。' });
     }
   }
 }

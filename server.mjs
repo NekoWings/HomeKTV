@@ -54,7 +54,7 @@ const server = http.createServer(async (req, res) => {
     if (!pathname.startsWith('/api/')) {
       const asset = assets.get(pathname);
       if (!asset || req.method !== 'GET') return send(404, { error: '不存在' });
-      res.writeHead(200, { 'Content-Type': asset[1], 'Cache-Control': 'no-cache', 'Content-Security-Policy': "default-src 'self'; img-src 'self' https://*.hdslb.com; style-src 'self'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'" });
+      res.writeHead(200, { 'Content-Type': asset[1], 'Cache-Control': 'no-cache', 'Content-Security-Policy': "default-src 'self'; img-src 'self' https://*.hdslb.com https://*.ytimg.com; style-src 'self'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'" });
       return res.end(readFileSync(path.join(root, asset[0])));
     }
     // No permissive CORS: phones use the same origin; extensions use host permissions.
@@ -85,6 +85,7 @@ const server = http.createServer(async (req, res) => {
     if (pathname === '/api/host') return send(200, room.claim(body.hostId));
     if (pathname === '/api/report') {
       room.requireHost(body.hostId);
+      if (body.id === room.state.current?.id && body.seekId === room.seek?.id) room.seek = null;
       if (body.id === room.state.current?.id) room.status = { message: String(body.message || '').slice(0, 200), ...(Number.isFinite(body.time) ? { time: Math.max(0, body.time) } : {}), duration: Math.max(0, Number(body.duration) || 0), at: Date.now() };
       return send(200, room.snapshot());
     }
