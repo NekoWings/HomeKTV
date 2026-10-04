@@ -1,3 +1,307 @@
-:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#111118;color:#f4f4fa;font:15px/1.7 system-ui,'Microsoft YaHei',sans-serif}main{max-width:760px;margin:45px auto;padding:0 24px}.eyebrow{font-size:12px;letter-spacing:3px;color:#c6fb78}h1{font-size:36px;margin-bottom:0}h2{font-size:19px}section{background:#1b1b26;border:1px solid #343444;border-radius:18px;padding:24px;margin:22px 0}.muted{color:#aaaabe;font-size:13px}label{display:block;color:#bbb; margin:12px 0}input{display:block;width:100%;padding:12px;margin-top:5px;background:#111118;border:1px solid #4a4a5a;color:#fff;border-radius:8px;font:inherit}button{cursor:pointer;padding:11px 17px;border:1px solid #454559;border-radius:9px;background:#2b2b39;color:#fff;font:600 14px system-ui;margin:4px 4px 4px 0}.primary{background:#c6fb78;color:#20251b;border-color:#c6fb78}button:disabled{opacity:.5}input:focus-visible,button:focus-visible{outline:2px solid #c6fb78;outline-offset:3px}#notice{color:#c6fb78;white-space:pre-line}.buttons{display:flex;flex-wrap:wrap}#song{overflow-wrap:anywhere}
-
-.toggle{display:flex;align-items:center;gap:10px;cursor:pointer}.toggle input{width:18px;height:18px;margin:0;accent-color:#c6fb78}
+:root {
+  color-scheme:dark;
+  --accent:#ff75b5;
+  --muted:#ab91a3;
+  --line:#ffffff16
+}
+* {
+  box-sizing:border-box
+}
+body {
+  margin:0;
+  background:radial-gradient(ellipse at 5% 10%,#7225503b,transparent 50%),radial-gradient(ellipse at 95% 80%,#4d1a3c30,transparent 45%),#100b11;
+  color:#f9edf5;
+  font:14px/1.7 system-ui,'Microsoft YaHei',sans-serif
+}
+main {
+  max-width:1140px;
+  margin:auto;
+  padding:0 32px 30px
+}
+header {
+  display:flex;
+  align-items:center;
+  gap:24px;
+  min-height:94px;
+  border-bottom:1px solid var(--line)
+}
+.brand {
+  font-size:27px;
+  letter-spacing:-1px;
+  font-weight:800;
+  text-decoration:none;
+  color:#fff
+}
+.brand span {
+  color:var(--accent)
+}
+.header-label {
+  font-size:9px;
+  color:#af7e9b;
+  letter-spacing:2px
+}
+header button {
+  margin-left:auto
+}
+.intro {
+  padding:36px 0 26px
+}
+.eyebrow {
+  font-size:9px;
+  letter-spacing:2.5px;
+  color:var(--accent);
+  margin:0
+}
+h1 {
+  font-size:34px;
+  letter-spacing:-1px;
+  margin:8px 0
+}
+h2 {
+  font-size:18px;
+  font-weight:600;
+  margin:0
+}
+h3 {
+  font-size:23px;
+  line-height:1.5;
+  margin:12px 0 6px
+}
+.muted {
+  color:var(--muted);
+  font-size:12px
+}
+.intro>.muted {
+  margin:0
+}
+.console-grid {
+  display:grid;
+  grid-template-columns:340px minmax(0,1fr);
+  gap:24px
+}
+.settings-column {
+  display:flex;
+  flex-direction:column;
+  gap:20px
+}
+section {
+  background:#271c27a6;
+  border:1px solid var(--line);
+  border-radius:22px;
+  padding:26px;
+  backdrop-filter:blur(24px);
+  box-shadow:0 10px 40px #0002
+}
+.section-heading {
+  display:flex;
+  align-items:center;
+  gap:10px;
+  margin-bottom:20px
+}
+.step {
+  font:10px monospace;
+  background:#ff75b512;
+  border:1px solid #ff75b526;
+  border-radius:7px;
+  padding:6px;
+  color:#ed92bd
+}
+.host-section>.muted {
+  margin:0 0 20px
+}
+label {
+  display:block;
+  font-size:12px;
+  color:#c2a6b7;
+  margin:14px 0
+}
+input {
+  display:block;
+  width:100%;
+  padding:11px 13px;
+  margin-top:6px;
+  background:#110c12a6;
+  border:1px solid #ffffff23;
+  color:#fff;
+  border-radius:10px;
+  font:inherit
+}
+input::placeholder {
+  color:#806979
+}
+button {
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:7px;
+  cursor:pointer;
+  padding:10px 14px;
+  border:1px solid #ffffff21;
+  border-radius:10px;
+  background:#ffffff05;
+  color:#e8d8e2;
+  font:500 12px system-ui;
+  transition:background .15s
+}
+button:hover {
+  background:#ffffff12
+}
+.primary {
+  background:var(--accent);
+  color:#331223;
+  border-color:var(--accent);
+  font-weight:650
+}
+.primary:hover {
+  background:#ff9bcc
+}
+.wide {
+  width:100%;
+  margin-top:6px
+}
+button:disabled {
+  opacity:.4;
+  cursor:default
+}
+input:focus-visible,button:focus-visible,a:focus-visible {
+  outline:2px solid var(--accent);
+  outline-offset:3px
+}
+.buttons {
+  display:flex;
+  gap:8px;
+  flex-wrap:wrap
+}
+.role {
+  color:#d998bb;
+  font-size:11px;
+  margin:24px 0 16px
+}
+.now-playing {
+  border:1px solid #ff8ebd23;
+  background:linear-gradient(120deg,#76264d21,#1a121c70);
+  border-radius:16px;
+  padding:24px;
+  margin-bottom:20px
+}
+.now-playing .eyebrow {
+  font-size:8px
+}
+.playback-controls {
+  margin-top:22px
+}
+.icon-defs {
+  position:absolute;
+  width:0;
+  height:0;
+  overflow:hidden
+}
+.icon {
+  width:16px;
+  height:16px;
+  fill:none;
+  stroke:currentColor;
+  stroke-width:1.8;
+  stroke-linecap:round;
+  stroke-linejoin:round
+}
+.hint {
+  line-height:1.9
+}
+.search-status {
+  border-top:1px solid var(--line);
+  padding-top:20px;
+  margin-top:24px;
+  display:flex;
+  align-items:center;
+  gap:16px
+}
+.search-status p {
+  flex:1
+}
+.search-status button {
+  flex-shrink:0
+}
+.toggle {
+  display:flex;
+  align-items:center;
+  gap:10px;
+  cursor:pointer
+}
+.toggle input {
+  width:17px;
+  height:17px;
+  margin:0;
+  accent-color:var(--accent)
+}
+.preferences h2 {
+  font-size:14px
+}
+.preferences p {
+  margin-bottom:0
+}
+#notice {
+  color:var(--accent);
+  white-space:pre-line;
+  font-size:12px;
+  min-height:24px;
+  margin-top:22px
+}
+#song {
+  overflow-wrap:anywhere
+}
+footer {
+  color:#806779;
+  font-size:11px;
+  text-align:center;
+  margin-top:22px
+}
+@media(max-width:800px) {
+  main {
+    padding:0 20px 25px
+  }
+  .console-grid {
+    grid-template-columns:290px minmax(0,1fr);
+    gap:16px
+  }
+  section {
+    padding:22px
+  }
+  .now-playing {
+    padding:20px
+  }
+  .search-status {
+    flex-direction:column;
+    align-items:flex-start;
+    gap:4px
+  }
+  .header-label {
+    display:none
+  }
+  h1 {
+    font-size:28px
+  }
+}
+@media(max-width:640px) {
+  .console-grid {
+    grid-template-columns:1fr
+  }
+  .intro {
+    padding:28px 0 24px
+  }
+  header {
+    min-height:76px
+  }
+  .brand {
+    font-size:24px
+  }
+  .now-playing h3 {
+    font-size:20px
+  }
+  .buttons button {
+    flex-grow:1
+  }
+  .playback-controls button {
+    min-height:42px
+  }
+}

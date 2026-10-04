@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 
 async function controllerHarness() {
   let time = 1000, nextId = 10, job = { id: 'job', token: 'token', query: '晴天 KTV 伴奏', page: 1 };
-  const tabs = new Map(), created = [], reports = [], nodes = new Map(), reloads = [];
+  const tabs = new Map(), created = [], reports = [], nodes = new Map(), reloads = [], windows = [];
   const state = { current: null, queue: [], desired: 'paused', hostOnline: true, status: {} };
   const context = vm.createContext({
     URL, AbortSignal, AbortController, Promise, setTimeout, setInterval: () => {},
@@ -14,6 +14,7 @@ async function controllerHarness() {
     document: { getElementById(id) { if (!nodes.has(id)) nodes.set(id, {}); return nodes.get(id); } },
     window: { addEventListener() {} },
     chrome: { storage: { onChanged: { addListener() {} }, local: { async get() { return { config: { server: 'http://localhost:3210', key: '', name: 'test' } }; } }, session: { async get() { return {}; }, async set() {}, async remove() {} } },
+      windows: { async create(data) { windows.push(data); return { id: 2 }; } },
       tabs: { async getCurrent() { return { id: 1 }; }, async get(id) { if (!tabs.has(id)) throw new Error('missing'); return tabs.get(id); },
         async create(data) { const tab = { ...data, id: nextId++ }; tabs.set(tab.id, tab); created.push(tab); return tab; },
         async update(id, data) { return { ...tabs.get(id), ...data, id }; }, async remove(id) { tabs.delete(id); }, async reload(id) { reloads.push(id); },
@@ -30,7 +31,7 @@ async function controllerHarness() {
   // Finish the controller's normal initialization without invoking browser timers.
   await new Promise(resolve => setImmediate(resolve));
   vm.runInContext('hosting = true', context);
-  return { context, created, reports, tabs, reloads, advance(ms) { time += ms; } };
+  return { context, created, reports, tabs, reloads, windows, advance(ms) { time += ms; } };
 }
 
 test('controller captures old player time before navigation and sends it to new part', async () => {
@@ -87,4 +88,15 @@ test('genuine empty results and verification prompts are never auto-reloaded', a
     assert.equal(h.reloads.length, 0); assert.equal(h.reports.length, 1);
     if (result.blocked) assert.match(h.reports[0].error, /验证/); else assert.equal(h.reports[0].results.length, 0);
   }
+});
+
+test('dedicated player opens in its own fullscreen window and reuses it for next songs', async () => {
+  const h = await controllerHarness();
+  const state = { current: { id: 'a', url: 'https://www.bilibili.com/video/BV1sg4y1q7WD/' }, desired: 'playing', queue: [], status: {} };
+  await h.context.control(state);
+  assert.equal(h.created[0].active, false);
+  assert.deepEqual(h.windows.map(data => ({ ...data })), [{ tabId: h.created[0].id, type: 'popup', state: 'fullscreen', focused: true }]);
+  await h.context.control({ ...state, current: { ...state.current, id: 'b' } });
+  assert.equal(h.created.length, 1); assert.equal(h.windows.length, 1);
+  await h.context.closePlayer(); assert.equal(h.tabs.size, 0);
 });

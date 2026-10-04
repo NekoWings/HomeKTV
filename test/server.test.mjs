@@ -59,8 +59,15 @@ for (const roomKey of ['', 'test-room']) test(`HTTP ${roomKey ? 'protected' : 'o
     assert.equal((await api('report', { hostId, id: state.current.id, message: '正在播放', time: 2, duration: 100 })).status, 200);
     await Promise.all([api('action', { action: 'next', id: state.current.id }), api('action', { action: 'ended', id: state.current.id, hostId })]);
     state = (await api('state')).data; assert.equal(state.queue.length, 10);
+    assert.equal(state.history.length, 1);
+    const replayRequest = { action: 'replay', id: state.history[0].id, first: true, requestId: 'http-replay' };
+    assert.equal((await api('action', replayRequest)).status, 200);
+    assert.equal((await api('action', replayRequest)).status, 200);
+    state = (await api('state')).data;
+    assert.equal(state.queue.length, 11); assert.equal(state.queue[0].url, state.history[0].url);
+    assert.notEqual(state.queue[0].id, state.history[0].id);
     await stop(); base = await start();
-    const restored = (await api('state')).data; assert.equal(restored.current.id, state.current.id); assert.equal(restored.queue.length, 10); assert.equal(restored.desired, 'paused'); assert.equal(restored.hostOnline, false);
+    const restored = (await api('state')).data; assert.equal(restored.current.id, state.current.id); assert.equal(restored.queue.length, 11); assert.deepEqual(restored.history, state.history); assert.equal(restored.desired, 'paused'); assert.equal(restored.hostOnline, false);
   } finally {
     if (child && child.exitCode === null && child.signalCode === null) await stop();
     const resolved = path.resolve(dir), tempRoot = path.resolve(os.tmpdir());

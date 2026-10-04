@@ -39,7 +39,96 @@ let key = sessionStorage.getItem('ktv-key') || '', state, busy = false, joined =
 $('name').value = localStorage.getItem('ktv-name') || '';
 $('nickname').value = $('name').value;
 $('nickname').onchange = () => localStorage.setItem('ktv-name', $('nickname').value.trim());
-function notice(message) { $('notice').textContent = message; }
+let noticeTimer;
+function notice(message) {
+  $('notice').textContent = message; $('notice').hidden = false;
+  clearTimeout(noticeTimer); noticeTimer = setTimeout(() => { $('notice').hidden = true; }, 4500);
+}
+function icon(name) {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('class', 'icon'); svg.setAttribute('aria-hidden', 'true');
+  const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+  use.setAttribute('href', `#i-${name}`); svg.append(use); return svg;
+}
+function songButton(label, symbol, handler, className = '') {
+  const button = document.createElement('button'); button.type = 'button'; button.className = className;
+  button.append(icon(symbol), document.createTextNode(label)); button.onclick = handler; return button;
+}
+function timeLabel(time) { const seconds = Math.max(0, Math.floor(Number(time) || 0)); return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`; }
+function hideRoom() {
+  $('room').hidden = $('player').hidden = true; $('join').hidden = false;
+  for (const dialog of document.querySelectorAll('dialog[open]')) dialog.close();
+}
+for (const [trigger, dialog] of [['inviteOpen', 'inviteDialog'], ['linkOpen', 'linkDialog'], ['profileOpen', 'profileDialog'], ['moreOpen', 'moreDialog']]) {
+  $(trigger).onclick = () => { if (dialog === 'linkDialog') $('linkMessage').hidden = true; $(dialog).showModal(); };
+}
+for (const button of document.querySelectorAll('[data-close]')) button.onclick = () => $(button.dataset.close).close();
+for (const dialog of document.querySelectorAll('dialog')) dialog.addEventListener('click', event => {
+  if (event.target !== dialog) return;
+  const bounds = dialog.getBoundingClientRect();
+  if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) dialog.close();
+});
+const narrowLayout = matchMedia('(max-width: 800px)');
+function dockQueue() {
+  if (!narrowLayout.matches && $('queueDialog').open) $('queueDialog').close();
+  (narrowLayout.matches ? $('queueDialog') : $('queueDock')).append($('queuePanel'));
+}
+narrowLayout.addEventListener('change', dockQueue); dockQueue();
+function openQueue() {
+  if (narrowLayout.matches) { if (!$('queueDialog').open) $('queueDialog').showModal(); }
+  else $('queueTab').focus();
+}
+$('queueOpen').onclick = $('playerQueueOpen').onclick = openQueue;
+$('queueClose').onclick = () => $('queueDialog').close();
+function setQueueTab(history) {
+  $('queuedPane').hidden = history; $('historyPane').hidden = !history;
+  for (const [id, selected] of [['queueTab', !history], ['historyTab', history]]) {
+    $(id).classList.toggle('active', selected); $(id).setAttribute('aria-selected', String(selected)); $(id).tabIndex = selected ? 0 : -1;
+  }
+}
+$('queueTab').onclick = () => setQueueTab(false); $('historyTab').onclick = () => setQueueTab(true);
+for (const id of ['queueTab', 'historyTab']) $(id).onkeydown = event => {
+  if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+  event.preventDefault(); const history = event.key === 'End' || (event.key !== 'Home' && id === 'queueTab');
+  setQueueTab(history); $(history ? 'historyTab' : 'queueTab').focus();
+};
+let setlistSignature = '';
+function drawSetlist(next) {
+  const history = next.history || [];
+  $('count').textContent = $('mobileCount').textContent = $('playerCount').textContent = next.queue.length;
+  $('historyCount').textContent = history.length; $('playerQueueOpen').setAttribute('aria-label', `查看歌单，${next.queue.length}首待唱`);
+  $('queueSummary').textContent = next.queue.length ? `${next.queue.length} 首待唱 · 按顺序播放` : '按点歌顺序播放';
+  $('queueNow').hidden = !next.current;
+  $('queueCurrent').textContent = next.current?.title || ''; $('queueCurrent').title = next.current?.title || '';
+  $('queueBy').textContent = next.current ? `${next.current.by} 点的` : '';
+  $('queuePanel').classList.toggle('paused', next.desired !== 'playing' || !next.hostOnline);
+  const signature = JSON.stringify([next.queue, history]);
+  // Keep scroll and keyboard focus stable while the playback heartbeat updates.
+  if (signature === setlistSignature) return; setlistSignature = signature;
+  $('empty').hidden = next.queue.length > 0; $('historyEmpty').hidden = history.length > 0;
+  function row(song, index, past) {
+    const li = document.createElement('li'); li.className = 'song-row';
+    const number = document.createElement('span'); number.className = 'number'; number.textContent = String(index + 1).padStart(2, '0');
+    const info = document.createElement('div'); info.className = 'song-info';
+    const link = document.createElement('a'); link.textContent = song.title; link.href = song.url; link.target = '_blank'; link.rel = 'noreferrer';
+    const by = document.createElement('small'); by.textContent = `${song.by} 点的${past ? ` · ${song.outcome === 'skipped' ? '已切歌' : '已唱完'}` : ''}`;
+    info.append(link, by); const actions = document.createElement('div'); actions.className = 'song-actions';
+    if (past) {
+      for (const first of [false, true]) {
+        const button = songButton(first ? '下一首唱' : '再唱一次', first ? 'next' : 'repeat', async () => {
+          button.disabled = true; await act({ action: 'replay', id: song.id, first, by: localStorage.getItem('ktv-name') || '朋友' }, '已再次加入歌单'); button.disabled = false;
+        }); actions.append(button);
+      }
+    } else {
+      actions.append(songButton('下一首', 'up', () => act({ action: 'top', id: song.id }, '已安排为下一首')),
+        songButton('版本', 'sliders', () => selectPart(song, { switching: true })),
+        songButton('移除', 'close', () => act({ action: 'remove', id: song.id }, '已移除歌曲')));
+    }
+    li.append(number, info, actions); return li;
+  }
+  $('queue').replaceChildren(...next.queue.map((song, index) => row(song, index, false)));
+  $('history').replaceChildren(...history.map((song, index) => row(song, index, true)));
+}
 async function api(path, body) {
   const response = await fetch(`/api/${path}`, { method: body ? 'POST' : 'GET', headers: { 'x-room-key': key, ...(body ? { 'Content-Type': 'application/json' } : {}) }, body: body ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(path === 'video/parts' ? 10000 : 5000) });
   const result = await response.json();
@@ -47,36 +136,36 @@ async function api(path, body) {
   return result;
 }
 function render(next) {
-  state = next;
-  joined = true;
-  $('join').hidden = true; $('room').hidden = false;
+  state = next; joined = true;
+  $('join').hidden = true; $('room').hidden = $('player').hidden = false;
   $('inviteKey').textContent = keyRequired ? `房间口令：${key}` : '免口令 · 扫码即可点歌';
-  $('connection').textContent = next.hostOnline ? '● 主机在线' : '○ 主机离线';
-  $('current').textContent = next.current?.title || '还没有点歌';
-  $('currentPart').disabled = !next.current;
-  $('status').textContent = next.hostOnline ? `${next.status.message || '等待播放'}${next.desired === 'paused' ? ' · 已请求暂停' : next.desired === 'stopped' ? ' · 已关闭播放' : ''}` : '主机离线，仍可点歌；请在主机扩展控制台接管播放';
+  $('connection').textContent = next.hostOnline ? '主机在线' : '主机离线';
+  $('connection').classList.toggle('online', next.hostOnline);
+  $('current').textContent = next.current?.title || '还没有点歌'; $('current').title = next.current?.title || '';
+  for (const id of ['play', 'pause', 'next', 'stop', 'currentPart', 'moreOpen']) $(id).disabled = !next.current;
+  const playing = next.desired === 'playing'; $('play').hidden = playing; $('pause').hidden = !playing;
+  const status = next.hostOnline ? `${next.status.message || '等待播放'}${next.desired === 'paused' ? ' · 已暂停' : next.desired === 'stopped' ? ' · 已关闭播放' : ''}` : '主机离线 · 请在扩展控制台接管播放';
+  $('status').textContent = $('status').title = status;
   $('progress').max = next.status.duration || 1; $('progress').value = next.status.time || 0;
-  $('count').textContent = next.queue.length; $('empty').hidden = next.queue.length > 0;
-  $('queue').replaceChildren(...next.queue.map((song, index) => {
-    const li = document.createElement('li'), number = document.createElement('span'), info = document.createElement('div'), link = document.createElement('a'), by = document.createElement('small');
-    number.className = 'number'; number.textContent = String(index + 1).padStart(2, '0');
-    info.className = 'song-info'; link.textContent = song.title; link.href = song.url; link.target = '_blank'; link.rel = 'noreferrer'; by.textContent = `${song.by} 点的`; info.append(link, by); li.append(number, info);
-    for (const [action, label] of [['top', '↑ 置顶'], ['remove', '移除']]) { const button = document.createElement('button'); button.textContent = label; button.onclick = () => act({ action, id: song.id }); li.append(button); }
-    const version = document.createElement('button'); version.textContent = '版本 / 分P'; version.onclick = () => selectPart(song, { switching: true }); li.append(version);
-    return li;
-  }));
+  $('elapsed').textContent = timeLabel(next.status.time); $('duration').textContent = timeLabel(next.status.duration);
+  drawSetlist(next);
 }
-async function refresh() { if (!joined || busy) return; busy = true; try { render(await api('state')); } catch (error) { $('connection').textContent = '连接中断'; notice(error.message); if (error.status === 401) { joined = false; keyRequired = true; $('keyField').hidden = false; $('key').required = true; $('joinHint').textContent = '本房间已启用口令，请输入主机设置的口令。'; $('join').hidden = false; $('room').hidden = true; $('inviteKey').textContent = '本房间已启用口令，请输入口令加入。'; } } finally { busy = false; } }
-async function act(body) { try { render(await api('action', { ...body, requestId: `${Date.now()}-${Math.random()}` })); notice('已更新歌单'); } catch (error) { notice(error.message); } }
+async function refresh() { if (!joined || busy) return; busy = true; try { render(await api('state')); } catch (error) { $('connection').textContent = '连接中断'; $('connection').classList.remove('online'); notice(error.message); if (error.status === 401) { joined = false; keyRequired = true; $('keyField').hidden = false; $('key').required = true; $('joinHint').textContent = '本房间已启用口令，请输入主机设置的口令。'; hideRoom(); $('inviteKey').textContent = '本房间已启用口令，请输入口令加入。'; } } finally { busy = false; } }
+async function act(body, message = '已更新歌单') { try { render(await api('action', { ...body, requestId: `${Date.now()}-${Math.random()}` })); notice(message); } catch (error) { notice(error.message); } }
 $('joinForm').onsubmit = async event => { event.preventDefault(); key = $('key').value.trim(); localStorage.setItem('ktv-name', $('name').value.trim()); $('nickname').value = $('name').value.trim(); try { render(await api('state')); sessionStorage.setItem('ktv-key', key); notice('已加入房间，开始点歌吧。'); } catch (error) { notice(error.message); key = ''; } };
 async function add(first) {
   if (!$('addForm').reportValidity()) return;
+  $('linkMessage').hidden = true;
   const buttons = [...$('addForm').querySelectorAll('button')]; buttons.forEach(x => x.disabled = true);
-  try { render(await api('action', { action: 'add', url: $('url').value, title: $('title').value.trim(), by: localStorage.getItem('ktv-name') || '朋友', first, requestId: `${Date.now()}-${Math.random()}` })); $('url').value = ''; $('title').value = ''; notice('已加入歌单'); } catch (error) { notice(error.message); } finally { buttons.forEach(x => x.disabled = false); }
+  try { render(await api('action', { action: 'add', url: $('url').value, title: $('title').value.trim(), by: localStorage.getItem('ktv-name') || '朋友', first, requestId: `${Date.now()}-${Math.random()}` })); $('url').value = ''; $('title').value = ''; $('linkDialog').close(); notice('已加入歌单'); } catch (error) { $('linkMessage').hidden = false; $('linkMessage').textContent = error.message; notice(error.message); } finally { buttons.forEach(x => x.disabled = false); }
 }
 $('addForm').onsubmit = event => { event.preventDefault(); add(false); }; $('first').onclick = () => add(true);
-for (const action of ['play', 'pause', 'next', 'stop']) $(action).onclick = () => act({ action, id: state?.current?.id });
-$('leave').onclick = () => { joined = false; key = ''; sessionStorage.removeItem('ktv-key'); $('room').hidden = true; $('join').hidden = false; $('connection').textContent = '未加入'; $('inviteKey').textContent = keyRequired ? '加入房间后，这里会显示房间口令。' : '免口令 · 扫码即可点歌'; };
+for (const action of ['play', 'pause', 'next', 'stop']) $(action).onclick = async () => {
+  const button = $(action); button.disabled = true;
+  await act({ action, id: state?.current?.id }, { play: '已请求播放', pause: '已请求暂停', next: '已切换下一首', stop: '已关闭播放页' }[action]);
+  if (action === 'stop') $('moreDialog').close(); button.disabled = !state?.current;
+};
+$('leave').onclick = () => { joined = false; key = ''; sessionStorage.removeItem('ktv-key'); hideRoom(); $('connection').textContent = '未加入'; $('connection').classList.remove('online'); $('inviteKey').textContent = keyRequired ? '加入房间后，这里会显示房间口令。' : '免口令 · 扫码即可点歌'; };
 async function connect() {
   try {
     ({ keyRequired } = await api('info'));
@@ -95,23 +184,20 @@ let searchGeneration = 0, searchRequest, searchPage = 1;
 function showSearchResults(results) {
   $('searchResults').replaceChildren(...results.map(song => {
     const card = document.createElement('article'); card.className = 'search-result';
-    if (song.cover) { const image = document.createElement('img'); image.src = song.cover; image.alt = ''; image.loading = 'lazy'; image.referrerPolicy = 'no-referrer'; image.onerror = () => image.remove(); card.append(image); }
+    const cover = document.createElement('div'); cover.className = 'result-cover'; cover.append(icon('mic'));
+    if (song.cover) { const image = document.createElement('img'); image.src = song.cover; image.alt = ''; image.loading = 'lazy'; image.referrerPolicy = 'no-referrer'; image.onerror = () => { image.remove(); cover.append(icon('mic')); }; cover.replaceChildren(image); }
     const info = document.createElement('div'); info.className = 'search-result-info';
     const title = document.createElement('a'); title.href = song.url; title.target = '_blank'; title.rel = 'noreferrer'; title.textContent = song.title;
     const meta = document.createElement('p'); meta.className = 'muted small'; meta.textContent = [song.author, song.duration].filter(Boolean).join(' · ');
     const actions = document.createElement('div'); actions.className = 'controls';
-    for (const first of [false, true]) {
-      const button = document.createElement('button'); button.textContent = first ? '↑ 下一首唱' : '＋ 点歌'; if (!first) button.className = 'primary';
-      button.onclick = () => selectPart(song, { first });
-      actions.append(button);
-    }
-    info.append(title, meta, actions); card.append(info); return card;
+    for (const first of [false, true]) actions.append(songButton(first ? '下一首唱' : '点歌', first ? 'next' : 'plus', () => selectPart(song, { first }), first ? '' : 'primary'));
+    info.append(title, meta, actions); card.append(cover, info); return card;
   }));
 }
 async function search(page = 1, newQuery = false) {
   if (newQuery) { searchRequest = { query: $('searchQuery').value.trim(), mode: $('searchMode').value }; localStorage.setItem('ktv-search-mode', searchRequest.mode); }
   if (!searchRequest?.query) return;
-  const generation = ++searchGeneration;
+  const generation = ++searchGeneration; $('searchWelcome').hidden = true; $('resultsScroll').scrollTop = 0;
   $('searchSubmit').disabled = true; $('searchPrev').hidden = true; $('searchNext').hidden = true; $('searchPage').textContent = '';
   $('searchResults').replaceChildren(); $('searchMessage').textContent = '正在请主机找歌，首次搜索可能需要几秒…';
   try {
@@ -137,6 +223,10 @@ $('searchNext').onclick = () => search(searchPage + 1);
 
 const savedMode = localStorage.getItem('ktv-search-mode');
 if (['ktv', 'nicokara', 'plain'].includes(savedMode)) $('searchMode').value = savedMode;
+for (const button of document.querySelectorAll('[data-query]')) button.onclick = () => {
+  $('searchQuery').value = button.dataset.query; if (button.dataset.mode) $('searchMode').value = button.dataset.mode;
+  search(1, true);
+};
 let partSelection = 0;
 $('partsClose').onclick = () => $('partsDialog').close();
 $('partsDialog').addEventListener('close', () => { partSelection++; });

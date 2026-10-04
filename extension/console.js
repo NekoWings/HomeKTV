@@ -100,9 +100,12 @@ async function control(next) {
   const existing = playerTab !== null ? await chrome.tabs.get(playerTab).catch(() => null) : null;
   if (!existing) {
     loadedResume = song.resumeTime;
-    const tab = await chrome.tabs.create({ url: url.href, active: true });
+    const tab = await chrome.tabs.create({ url: url.href, active: false });
     playerTab = tab.id; loadedId = song.id; navigatingAt = Date.now();
-    await chrome.storage.session.set({ playerTab }); return;
+    await chrome.storage.session.set({ playerTab });
+    // Isolate fullscreen to the dedicated player, keeping the controller available.
+    await chrome.windows.create({ tabId: tab.id, type: 'popup', state: 'fullscreen', focused: true });
+    return;
   }
   if (loadedId !== song.id) {
     let resume = song.resumeTime;
@@ -189,7 +192,7 @@ $('release').onclick = async () => {
   await closeSearch();
   try { draw(await api('release', { hostId })); notice('已停止接管，其他设备可以接管。'); } catch (error) { notice(error.message); }
 };
-$('focus').onclick = async () => { if (playerTab !== null) { const tab = await chrome.tabs.update(playerTab, { active: true }).catch(() => null); if (tab) await chrome.windows.update(tab.windowId, { focused: true }); } else notice('尚未创建播放页。先接管播放并点一首歌。'); };
+$('focus').onclick = async () => { if (playerTab !== null) { const tab = await chrome.tabs.update(playerTab, { active: true }).catch(() => null); if (tab) await chrome.windows.update(tab.windowId, { focused: true, state: 'fullscreen' }); } else notice('尚未创建播放页。先接管播放并点一首歌。'); };
 $('remote').onclick = () => { if (config) chrome.tabs.create({ url: config.server }); else notice('请先连接房间'); };
 $('searchFocus').onclick = async () => { if (searchTab === null) return notice('搜索页将在朋友搜索时自动打开。'); const tab = await chrome.tabs.update(searchTab, { active: true }).catch(() => null); if (tab) await chrome.windows.update(tab.windowId, { focused: true }); };
 for (const action of ['play', 'pause', 'next', 'stop']) $(action).onclick = async () => { try { draw(await api('action', { action, id: state?.current?.id, requestId: crypto.randomUUID() })); } catch (error) { notice(error.message); } };

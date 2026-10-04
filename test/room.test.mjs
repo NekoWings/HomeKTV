@@ -77,3 +77,45 @@ test('retried additions are idempotent and queue size is bounded', () => {
   for (let i = 0; i < 200; i++) add(room, String(i));
   assert.throws(() => add(room, 'overflow'));
 });
+
+test('completed and skipped songs are recorded once, newest first, and survive restart', () => {
+  let saved;
+  const room = new Room({}, state => { saved = structuredClone(state); }); room.claim(hostId);
+  add(room, 'A'); add(room, 'B');
+  const a = room.state.current.id;
+  room.action({ action: 'ended', id: a, hostId });
+  room.action({ action: 'ended', id: a, hostId });
+  room.action({ action: 'next', id: a });
+  assert.equal(room.state.history.length, 1); assert.equal(room.state.history[0].outcome, 'completed');
+  room.action({ action: 'next', id: room.state.current.id });
+  assert.deepEqual(room.state.history.map(song => song.title), ['B', 'A']);
+  assert.equal(room.state.history[0].outcome, 'skipped'); assert.ok(room.state.history[0].finishedAt);
+  assert.deepEqual(new Room(saved).state.history, room.state.history);
+  assert.deepEqual(new Room({ current: null, queue: [] }).state.history, []);
+});
+test('replaying history retains selected version, creates a fresh identity and supports priority and retry', () => {
+  const room = new Room(); add(room, 'A'); room.status = { time: 22 };
+  room.action({ action: 'part', id: room.state.current.id, url: `https://www.bilibili.com/video/${video}/?p=2`, title: 'A · P2' });
+  const song = { ...room.state.current }; add(room, 'B'); add(room, 'C');
+  room.action({ action: 'next', id: song.id });
+  const request = { action: 'replay', id: song.id, first: true, by: '再唱的人', requestId: 'replay-once' };
+  room.action(request); room.action(request);
+  assert.deepEqual(room.state.queue.map(song => song.title), ['A · P2', 'C']);
+  const replay = room.state.queue[0]; assert.equal(replay.url, song.url); assert.notEqual(replay.id, song.id);
+  assert.equal(replay.baseTitle, 'A'); assert.equal(replay.by, '再唱的人');
+  assert.equal(replay.resumeTime, undefined); assert.equal(replay.resumeFrom, undefined); assert.equal(replay.finishedAt, undefined);
+  assert.equal(room.state.history.length, 1);
+  room.action({ action: 'replay', id: song.id }); assert.equal(room.state.queue.at(-1).title, 'A · P2');
+  assert.throws(() => room.action({ action: 'replay', id: 'missing' }), /已唱列表/);
+});
+test('pause, stop, removal and version changes do not create history; history is bounded', () => {
+  const room = new Room(); add(room, 'A'); add(room, 'B');
+  room.action({ action: 'pause' }); room.action({ action: 'stop' });
+  room.action({ action: 'remove', id: room.state.queue[0].id });
+  room.action({ action: 'part', id: room.state.current.id, url: `https://www.bilibili.com/video/${video}/?p=2` });
+  assert.equal(room.state.history.length, 0);
+  for (let i = 0; i < 205; i++) { if (!room.state.current) add(room, String(i)); room.action({ action: 'next', id: room.state.current.id }); }
+  assert.equal(room.state.history.length, 200);
+  const history = room.state.history; assert.equal(new Room({ history: [...history, ...history] }).state.history.length, 200);
+  assert.equal(new Room({ history: 'invalid' }).state.history.length, 0);
+});

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "HomeKTV · B站局域网点歌",
-  "version": "0.3.2",
+  "version": "0.4.0",
   "description": "在B站点歌，在客厅一起唱。支持Chrome/Edge和手机网页点歌器。",
   "permissions": ["storage", "tabs"],
   "optional_host_permissions": ["http://*/*", "https://*/*"],

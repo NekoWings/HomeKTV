@@ -4,7 +4,22 @@
   const managedId = original.searchParams.get('ktv_song');
   const originalVideo = original.pathname;
   const originalPart = original.searchParams.get('p') || '1';
-  let resumeApplied = false, resumePending = false;
+  let resumeApplied = false, resumePending = false, fullscreenApplied = false;
+  function ensureWebFullscreen() {
+    if (!managedId || fullscreenApplied) return;
+    const current = new URL(location.href);
+    if (current.pathname !== originalVideo || (current.searchParams.get('p') || '1') !== originalPart) return;
+    const video = mainVideo();
+    if (!video || video.readyState < 1) return;
+    const container = document.querySelector('.bpx-player-container, .bilibili-player');
+    const screen = container?.getAttribute?.('data-screen');
+    if (screen === 'web' || screen === 'full' || document.fullscreenElement ||
+        container?.classList?.contains('bpx-state-web') || container?.classList?.contains('mode-webfullscreen')) {
+      fullscreenApplied = true; return;
+    }
+    const button = document.querySelector('.bpx-player-ctrl-web, .bilibili-player-video-web-fullscreen');
+    if (typeof button?.click === 'function') { button.click(); fullscreenApplied = true; }
+  }
   let showSongButtons = false, panelHost;
   function setSongButtons(enabled) {
     showSongButtons = enabled;
@@ -42,12 +57,12 @@
     panelHost = host;
     host.style.cssText = 'position:fixed;right:18px;bottom:22px;z-index:2147483647;';
     panel = host.attachShadow({ mode: 'closed' });
-    const style = document.createElement('style'); style.textContent = ':host{all:initial}aside{font:13px/1.5 system-ui;background:#171721;color:#fff;padding:14px;border:1px solid #5b5b70;border-radius:12px;max-width:300px;box-shadow:0 8px 30px #0005}strong{color:#c6fb78}.message{font-size:12px;margin:6px 0;overflow-wrap:anywhere}button{cursor:pointer;background:#c6fb78;color:#20251b;border:0;border-radius:6px;padding:7px 9px;font:600 12px system-ui;margin:4px 5px 0 0}';
+    const style = document.createElement('style'); style.textContent = ':host{all:initial}aside{font:13px/1.5 system-ui;background:#20121fea;color:#fff;padding:14px;border:1px solid #ff86bf44;border-radius:12px;max-width:300px;box-shadow:0 8px 30px #0005;backdrop-filter:blur(24px)}strong{color:#ff75b5}.message{font-size:12px;margin:6px 0;overflow-wrap:anywhere}button{cursor:pointer;background:#ff75b5;color:#301022;border:0;border-radius:6px;padding:7px 9px;font:600 12px system-ui;margin:4px 5px 0 0}';
     const box = document.createElement('aside'), title = document.createElement('strong'), msg = document.createElement('div');
     title.textContent = managedId ? 'HomeKTV · 专用播放页' : 'HomeKTV · 点歌'; msg.className = 'message'; msg.textContent = managedId ? '等待主机控制台…' : '当前视频加入客厅歌单'; box.append(title, msg);
     if (managedId) {
       const start = document.createElement('button'); start.textContent = '▶ 开始唱 / 允许声音'; start.onclick = async () => { const video = mainVideo(); if (!video) return show('视频还未加载，请稍后重试'); if (Date.now() - lastCommand > 10000) return show('请先在控制台接管播放'); wanted = 'playing'; video.muted = false; if (video.volume === 0) video.volume = 0.8; try { await video.play(); show('已启用声音'); } catch (error) { show(error.message); } }; box.append(start);
-      const full = document.createElement('button'); full.textContent = '网页全屏'; full.onclick = () => { const button = document.querySelector('.bpx-player-ctrl-web, .bilibili-player-video-web-fullscreen'); if (button) button.click(); else show('请使用 B站播放器的网页全屏按钮'); }; box.append(full);
+      const full = document.createElement('button'); full.textContent = '⛶ 网页全屏'; full.onclick = () => { fullscreenApplied = true; const button = document.querySelector('.bpx-player-ctrl-web, .bilibili-player-video-web-fullscreen'); if (button) button.click(); else show('请使用 B站播放器的网页全屏按钮'); }; box.append(full);
     } else for (const first of [false, true]) { const button = document.createElement('button'); button.textContent = first ? '↑ 下一首唱' : '＋ 加入歌单'; button.onclick = () => add(location.href, document.querySelector('h1')?.textContent || document.title.replace(/_哔哩哔哩.*$/, ''), first, button); box.append(button); }
     panel.append(style, box); document.body.append(host);
     if (!managedId && (!showSongButtons || !/\/video\//.test(location.pathname))) host.hidden = true;
@@ -68,7 +83,7 @@
       const container = document.createElement('span'); container.style.cssText = 'display:inline-flex;gap:4px;position:relative;z-index:20;margin:4px;';
       container.className = 'home-ktv-song-buttons';
       for (const first of [false, true]) {
-        const button = document.createElement('button'); button.type = 'button'; button.textContent = first ? '↑置顶' : '＋点歌'; button.style.cssText = 'background:#17231c;color:#c6fb78;border:1px solid #6b8d42;border-radius:5px;padding:3px 7px;cursor:pointer;font:12px system-ui;white-space:nowrap;';
+        const button = document.createElement('button'); button.type = 'button'; button.textContent = first ? '↑置顶' : '＋点歌'; button.style.cssText = 'background:#301527;color:#ff75b5;border:1px solid #af467b;border-radius:5px;padding:3px 7px;cursor:pointer;font:12px system-ui;white-space:nowrap;';
         button.onclick = event => { event.preventDefault(); event.stopPropagation(); add(link.href, link.getAttribute('title') || link.textContent, first, button); }; container.append(button);
       }
       link.insertAdjacentElement('afterend', container);
@@ -89,7 +104,7 @@
     if (current.pathname !== originalVideo || (current.searchParams.get('p') || '1') !== originalPart) { videos().forEach(v => v.pause()); reply({ wrongPage: true }); return; }
     const video = mainVideo();
     if (!video) { reply({ message: '等待 B站视频加载；若持续等待，请检查登录或手动切歌' }); return; }
-    attach(video);
+    attach(video); ensureWebFullscreen();
     (async () => {
       if (Number.isFinite(message.resumeTime) && message.resumeTime > 0 && !resumeApplied) {
         resumePending = true;
@@ -120,7 +135,7 @@
   observer.observe(document, { childList: true, subtree: true });
   setInterval(() => {
     buildPanel();
-    if (managedId) { videos().forEach(attach); if (ended || Date.now() - lastCommand > 10000) videos().forEach(v => v.pause()); }
+    if (managedId) { videos().forEach(attach); ensureWebFullscreen(); if (ended || Date.now() - lastCommand > 10000) videos().forEach(v => v.pause()); }
     else decorate();
   }, 1000);
 })();
