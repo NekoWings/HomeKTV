@@ -24,7 +24,7 @@ test('search combines keywords, deduplicates jobs, caches results and keeps ordi
 });
 test('search needs online host, validates input and bounds pending requests', () => {
   const queue = new SearchQueue();
-  assert.throws(() => queue.create({ query: '歌' }, false), /接管播放/);
+  assert.throws(() => queue.create({ query: '歌' }, false), /启动主机/);
   for (const args of [{ query: '' }, { query: 'a'.repeat(81) }, { query: '歌', page: 0 }]) assert.throws(() => queue.create(args, true));
   for (let n = 0; n < 5; n++) queue.create({ query: `歌${n}` }, true);
   assert.throws(() => queue.create({ query: '满' }, true), /稍等/);

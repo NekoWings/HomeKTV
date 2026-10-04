@@ -90,7 +90,7 @@ const server = http.createServer(async (req, res) => {
       return send(200, room.snapshot());
     }
     if (pathname === '/api/release') {
-      room.requireHost(body.hostId); room.host = null; room.status = { message: '主机已停止接管' };
+      room.requireHost(body.hostId); room.host = null; room.status = { message: '主机已停止播放' };
       return send(200, room.snapshot());
     }
     send(404, { error: '不存在' });

@@ -305,3 +305,28 @@ footer {
     min-height:42px
   }
 }
+[hidden] { display:none!important }
+.intro { padding:24px 0 20px }
+h1 { font-size:30px }
+.setup-steps { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:18px; list-style:none; padding:0; margin:0 0 24px }
+.setup-steps li { display:flex; align-items:flex-start; gap:12px; padding:15px; border:1px solid var(--line); border-radius:14px; background:#ffffff03 }
+.setup-steps strong { font-size:13px }
+.setup-steps p { margin:4px 0 0; font-size:11px; color:var(--muted) }
+.setup-steps code { color:#f2b7d4; white-space:nowrap }
+.console-grid { grid-template-columns:minmax(330px,0.85fr) minmax(0,1.15fr) }
+.host-choice { display:flex; align-items:center; gap:12px; background:#ff75b50a; border:1px solid #ff75b526; padding:14px; border-radius:12px; cursor:pointer }
+.host-choice input { width:20px; height:20px; margin:0; accent-color:var(--accent); flex-shrink:0 }
+.host-choice small { display:block; margin-top:3px; color:var(--muted); font-size:11px }
+.host-choice strong { color:#f9edf5; font-size:14px }
+#settingsDetails { margin:18px 0 }
+summary { cursor:pointer; font-size:13px; color:#e7c8da; padding:8px 0 }
+summary span { display:block; color:var(--muted); font-size:11px; margin-left:16px }
+.preferences { padding:10px 20px; border:1px solid var(--line); border-radius:16px }
+.setup-error { border-left:3px solid var(--accent); padding:10px 12px; background:#ff75b512; font-size:13px; white-space:pre-line }
+#connect { min-height:48px; font-size:14px }
+#role { margin:0 0 12px; font-size:13px }
+.now-playing { margin-top:24px }
+#hostBadge.ready { background:#70d3a918; color:#91e7bd; border-color:#70d3a950 }
+#notice { font-size:13px }
+@media(max-width:800px) { .setup-steps { gap:10px } .setup-steps li { padding:12px; gap:8px } .console-grid { grid-template-columns:1fr } }
+@media(max-width:560px) { .setup-steps { grid-template-columns:1fr } h1 { font-size:26px } header button { padding:10px } }

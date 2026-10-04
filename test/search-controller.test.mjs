@@ -3,24 +3,29 @@ import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import { readFileSync } from 'node:fs';
 
-async function controllerHarness(source = 'bilibili') {
+async function controllerHarness(source = 'bilibili', options = {}) {
   let time = 1000, nextId = 10, job = { id: 'job', token: 'token', source, query: '晴天 KTV 伴奏', page: 1 };
   const tabs = new Map(), created = [], reports = [], nodes = new Map(), reloads = [], windows = [];
+  const requests = [], updates = [];
+  const saved = options.fresh ? {} : { config: { server: 'http://localhost:3210', key: '', name: 'test', role: options.role || 'remote', autoHost: options.autoHost } };
   const state = { current: null, queue: [], desired: 'paused', hostOnline: true, status: {} };
   const context = vm.createContext({
     URL, AbortSignal, AbortController, Promise, setTimeout, setInterval: () => {},
     Date: class extends Date { static now() { return time; } },
     crypto: { randomUUID: () => 'controller-host-123456' },
-    document: { getElementById(id) { if (!nodes.has(id)) nodes.set(id, {}); return nodes.get(id); } },
+    document: { getElementById(id) { if (!nodes.has(id)) nodes.set(id, { value: id === 'server' ? 'http://localhost:3210' : '', checked: id === 'hostMode', classList: { toggle() {} } }); return nodes.get(id); } },
     window: { addEventListener() {} },
-    chrome: { storage: { onChanged: { addListener() {} }, local: { async get() { return { config: { server: 'http://localhost:3210', key: '', name: 'test' } }; } }, session: { async get() { return {}; }, async set() {}, async remove() {} } },
+    chrome: { permissions: { async contains() { return options.permission !== false; }, async request() { return options.permission !== false; } }, storage: { onChanged: { addListener() {} }, local: { async get(key) { return { [key]: saved[key] }; }, async set(data) { Object.assign(saved, structuredClone(data)); } }, session: { async get() { return {}; }, async set() {}, async remove() {} } },
       windows: { async create(data) { windows.push(data); return { id: 2 }; } },
-      tabs: { async getCurrent() { return { id: 1 }; }, async get(id) { if (!tabs.has(id)) throw new Error('missing'); return tabs.get(id); },
+      tabs: { async query() { return options.existing ? [{ id: 90, windowId: 1, url: 'http://localhost:3210/' }] : [...tabs.values()]; }, async getCurrent() { return { id: 1 }; }, async get(id) { if (!tabs.has(id)) throw new Error('missing'); return tabs.get(id); },
         async create(data) { const tab = { ...data, id: nextId++ }; tabs.set(tab.id, tab); created.push(tab); return tab; },
-        async update(id, data) { return { ...tabs.get(id), ...data, id }; }, async remove(id) { tabs.delete(id); }, async reload(id) { reloads.push(id); },
+        async update(id, data) { updates.push({ id, ...data }); return { ...tabs.get(id), ...data, id }; }, async remove(id) { tabs.delete(id); }, async reload(id) { reloads.push(id); },
         async sendMessage(id, message) { return { results: [{ url: 'https://www.bilibili.com/video/BV1sg4y1q7WD/', title: '晴天' }], empty: false }; }, onRemoved: { addListener() {} } } },
-    async fetch(url, options) {
-      const route = new URL(url).pathname, body = options.body && JSON.parse(options.body);
+    async fetch(url, requestOptions) {
+      const route = new URL(url).pathname, body = requestOptions.body && JSON.parse(requestOptions.body);
+      requests.push({ route, body });
+      if (route === '/api/ticks') return { ok: true, body: { getReader: () => ({ read: () => new Promise(() => {}), cancel: async () => {} }) } };
+      if (route === '/api/host' && options.conflict) return { ok: false, json: async () => ({ error: '已有一台 KTV 主机在线，请先在原主机停止接管' }) };
       let data = state;
       if (route === '/api/search/claim') data = { job };
       if (route === '/api/search/result') { reports.push(body); job = null; data = { status: 'done' }; }
@@ -30,8 +35,8 @@ async function controllerHarness(source = 'bilibili') {
   vm.runInContext(readFileSync(new URL('../extension/console.js', import.meta.url), 'utf8'), context);
   // Finish the controller's normal initialization without invoking browser timers.
   await new Promise(resolve => setImmediate(resolve));
-  vm.runInContext('hosting = true', context);
-  return { context, created, reports, tabs, reloads, windows, advance(ms) { time += ms; } };
+  if (!options.natural) vm.runInContext('hosting = true', context);
+  return { context, created, reports, tabs, reloads, windows, nodes, saved, requests, updates, advance(ms) { time += ms; } };
 }
 
 test('controller captures old player time before navigation and sends it to new part', async () => {
@@ -113,4 +118,36 @@ test('YouTube search uses its own background results page and mixed playback kee
   await h.context.control(state);
   const player = new URL(h.created[1].url);
   assert.equal(player.searchParams.get('v'), 'k9OCGQl5HMI'); assert.equal(player.searchParams.get('ktv_song'), 'yt');
+});
+
+test('first connection automatically hosts and opens song page, explicit guest does not claim', async () => {
+  for (const host of [true, false]) {
+    const h = await controllerHarness('bilibili', { fresh: true, natural: true });
+    h.context.document.getElementById('hostMode').checked = host;
+    await h.nodes.get('settings').onsubmit({ preventDefault() {} });
+    assert.equal(h.requests.filter(r => r.route === '/api/host').length, host ? 1 : 0);
+    assert.equal(vm.runInContext('hosting', h.context), host);
+    assert.equal(h.saved.config.role, host ? 'host' : 'remote');
+    assert.equal(h.created.length, 1); assert.equal(h.created[0].url, 'http://localhost:3210');
+  }
+});
+test('saved host reconnects automatically and reuses the song page; stopped host stays stopped', async () => {
+  const h = await controllerHarness('bilibili', { role: 'host', natural: true, existing: true });
+  assert.equal(vm.runInContext('hosting', h.context), true);
+  assert.equal(h.created.length, 0); assert.ok(h.updates.some(t => t.id === 90 && t.active));
+  await h.nodes.get('release').onclick();
+  assert.equal(vm.runInContext('hosting', h.context), false); assert.equal(h.saved.config.autoHost, false);
+  const stopped = await controllerHarness('bilibili', { role: 'host', autoHost: false, natural: true });
+  assert.equal(stopped.requests.some(r => r.route === '/api/host'), false);
+});
+test('existing host is not replaced and permissions are required before automatic setup', async () => {
+  const conflict = await controllerHarness('bilibili', { role: 'host', natural: true, conflict: true });
+  assert.equal(vm.runInContext('hosting', conflict.context), false);
+  assert.equal(conflict.created.length, 0);
+  assert.match(conflict.nodes.get('setupError').textContent, /已有/);
+  await conflict.nodes.get('guestOpen').onclick();
+  assert.equal(conflict.saved.config.role, 'remote'); assert.equal(conflict.created.length, 1);
+  const denied = await controllerHarness('bilibili', { fresh: true, natural: true, permission: false });
+  await denied.nodes.get('settings').onsubmit({ preventDefault() {} });
+  assert.equal(denied.requests.length, 0); assert.equal(denied.saved.config, undefined);
 });

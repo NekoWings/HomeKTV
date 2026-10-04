@@ -57,10 +57,11 @@ function songButton(label, symbol, handler, className = '') {
 }
 function timeLabel(time) { const seconds = Math.max(0, Math.floor(Number(time) || 0)); return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`; }
 function hideRoom() {
+  $('hostHelp').hidden = true;
   $('room').hidden = $('player').hidden = true; $('join').hidden = false;
   for (const dialog of document.querySelectorAll('dialog[open]')) dialog.close();
 }
-for (const [trigger, dialog] of [['inviteOpen', 'inviteDialog'], ['linkOpen', 'linkDialog'], ['profileOpen', 'profileDialog'], ['moreOpen', 'moreDialog']]) {
+for (const [trigger, dialog] of [['inviteOpen', 'inviteDialog'], ['linkOpen', 'linkDialog'], ['profileOpen', 'profileDialog'], ['moreOpen', 'moreDialog'], ['hostHelpOpen', 'hostHelpDialog']]) {
   $(trigger).onclick = () => { if (dialog === 'linkDialog') $('linkMessage').hidden = true; $(dialog).showModal(); };
 }
 for (const button of document.querySelectorAll('[data-close]')) button.onclick = () => $(button.dataset.close).close();
@@ -75,6 +76,21 @@ function dockQueue() {
   (narrowLayout.matches ? $('queueDialog') : $('queueDock')).append($('queuePanel'));
 }
 narrowLayout.addEventListener('change', dockQueue); dockQueue();
+function dockSearch() {
+  if (!narrowLayout.matches && $('searchDialog').open) $('searchDialog').close();
+  (narrowLayout.matches ? $('searchDialog') : $('searchDock')).append($('searchPanel'));
+  if (narrowLayout.matches) $('mobileWelcomeDock').append($('searchWelcome'));
+  else $('resultsScroll').insertBefore($('searchWelcome'), $('searchResults'));
+  $('searchWelcome').hidden = !narrowLayout.matches && !!$('searchResults').children.length;
+}
+narrowLayout.addEventListener('change', dockSearch); dockSearch();
+function openSearch(focus = true) {
+  if (narrowLayout.matches && !$('searchDialog').open) $('searchDialog').showModal();
+  if (focus) $('searchQuery').focus();
+}
+$('searchOpen').onclick = () => openSearch();
+$('searchClose').onclick = () => $('searchDialog').close();
+$('searchDialog').addEventListener('close', () => { if (narrowLayout.matches && joined) $('searchOpen').focus(); });
 function openQueue() {
   if (narrowLayout.matches) { if (!$('queueDialog').open) $('queueDialog').showModal(); }
   else $('queueTab').focus();
@@ -142,11 +158,12 @@ function render(next) {
   $('inviteKey').textContent = keyRequired ? `房间口令：${key}` : '免口令 · 扫码即可点歌';
   $('connection').textContent = next.hostOnline ? '主机在线' : '主机离线';
   $('connection').classList.toggle('online', next.hostOnline);
+  $('hostHelp').hidden = next.hostOnline;
   $('current').textContent = next.current?.title || '还没有点歌'; $('current').title = next.current?.title || '';
   for (const id of ['play', 'pause', 'next', 'stop', 'currentPart', 'moreOpen']) $(id).disabled = !next.current;
   $('currentPart').hidden = isYouTube(next.current);
   const playing = next.desired === 'playing'; $('play').hidden = playing; $('pause').hidden = !playing;
-  const status = next.hostOnline ? `${next.status.message || '等待播放'}${next.desired === 'paused' ? ' · 已暂停' : next.desired === 'stopped' ? ' · 已关闭播放' : ''}` : '主机离线 · 请在扩展控制台接管播放';
+  const status = next.hostOnline ? `${next.status.message || '等待播放'}${next.desired === 'paused' ? ' · 已暂停' : next.desired === 'stopped' ? ' · 已关闭播放' : ''}` : '等待主机 · 在播放电脑打开 HomeKTV 扩展';
   $('status').textContent = $('status').title = status;
   $('progress').disabled = !next.current || !next.hostOnline || next.desired === 'stopped' || !(next.status.duration > 0);
   if (seekingSongId && (seekingSongId !== next.current?.id || $('progress').disabled)) seekingSongId = null;
@@ -219,7 +236,9 @@ function showSearchResults(results) {
 async function search(page = 1, newQuery = false) {
   if (newQuery) { searchRequest = { query: $('searchQuery').value.trim(), mode: $('searchMode').value, source: $('searchSource').value }; localStorage.setItem('ktv-search-source', searchRequest.source); localStorage.setItem('ktv-search-mode', searchRequest.mode); }
   if (!searchRequest?.query) return;
-  const generation = ++searchGeneration; $('searchWelcome').hidden = true; $('resultsScroll').scrollTop = 0;
+  openSearch(false); $('searchQuery').blur();
+  $('searchSummary').textContent = `继续查看「${searchRequest.query}」的搜索结果`;
+  const generation = ++searchGeneration; $('searchWelcome').hidden = !narrowLayout.matches; $('resultsScroll').scrollTop = 0;
   $('searchSubmit').disabled = true; $('searchPrev').hidden = true; $('searchNext').hidden = true; $('searchPage').textContent = '';
   $('searchResults').replaceChildren(); $('searchMessage').textContent = '正在请主机找歌，首次搜索可能需要几秒…';
   try {
@@ -227,14 +246,14 @@ async function search(page = 1, newQuery = false) {
     const deadline = Date.now() + 50000;
     while (['queued', 'running'].includes(job.status)) {
       if (generation !== searchGeneration) return;
-      if (Date.now() > deadline) throw new Error('等待搜索超时，请检查主机插件是否已更新并接管播放');
-      $('searchMessage').textContent = job.status === 'queued' ? '搜索已排队，等待主机处理…' : '主机正在读取 B站搜索结果…';
+      if (Date.now() > deadline) throw new Error('等待搜索超时，请检查主机扩展是否已更新并启动播放');
+      $('searchMessage').textContent = job.status === 'queued' ? '搜索已排队，等待主机处理…' : `主机正在读取 ${searchRequest.source === 'youtube' ? 'YouTube' : 'B站'} 搜索结果…`;
       await new Promise(resolve => setTimeout(resolve, 1000)); job = await api(`search/${job.id}`);
     }
     if (generation !== searchGeneration) return;
     if (job.status === 'error') throw new Error(job.error);
     searchPage = page; showSearchResults(job.results || []);
-    $('searchMessage').textContent = job.results.length ? (searchRequest.source === 'youtube' ? `找到 ${job.results.length} 个 YouTube 视频；可细化关键词搜索其他版本。` : `找到 ${job.results.length} 个视频，多分P歌曲点歌时可选 On / Off Vocal 或其他版本。`) : '没有找到相关视频，试试更短的歌名，或切换搜索模式。';
+    $('searchMessage').textContent = job.results.length ? (searchRequest.source === 'youtube' ? `找到 ${job.results.length} 个 YouTube 视频 · 可细化关键词` : `找到 ${job.results.length} 个视频 · 点歌时可选分P版本`) : '没有找到相关视频，试试更短的歌名，或切换搜索模式。';
     $('searchPage').textContent = `第 ${page} 页`; $('searchPrev').hidden = page === 1; $('searchNext').hidden = searchRequest.source === 'youtube' || page >= 10 || !job.results.length;
   } catch (error) { if (generation === searchGeneration) $('searchMessage').textContent = error.message; }
   finally { if (generation === searchGeneration) $('searchSubmit').disabled = false; }

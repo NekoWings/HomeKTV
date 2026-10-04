@@ -1,9 +1,9 @@
 const $ = id => document.getElementById(id);
-let config, state, hosting = false, polling = false, playerTab = null, loadedId = null, navigatingAt = 0;
+let config, state, hosting = false, polling = false, connecting = false, connected = false, playerTab = null, loadedId = null, navigatingAt = 0;
 let ticker;
 let loadedResume;
 let searchTab = null, searchJob = null, searchBusy = false, searchStarted = 0, searchSignature = '', searchReloaded = false;
-const hostId = crypto.randomUUID();
+let hostId = crypto.randomUUID();
 const notice = message => { $('notice').textContent = message; };
 const buttonsPreference = $('showSongButtons');
 chrome.storage.local.get('showSongButtons').then(saved => { buttonsPreference.checked = saved.showSongButtons !== false; });
@@ -18,15 +18,26 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (area === 'local' && changes.showSongButtons) buttonsPreference.checked = changes.showSongButtons.newValue !== false;
 });
 async function api(route, body) {
-  if (!config) throw new Error('请先保存并连接房间');
+  if (!config) throw new Error('请先连接房间');
   const response = await fetch(`${config.server}/api/${route}`, { method: body ? 'POST' : 'GET', headers: { 'x-room-key': config.key, ...(body ? { 'Content-Type': 'application/json' } : {}) }, body: body ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(4500) });
   const result = await response.json();
   if (!response.ok) throw new Error(result.error || '房间连接失败');
   return result;
 }
 function draw(next) {
-  state = next;
-  $('role').textContent = hosting ? '● 本机正在接管播放 · 请保持本控制台打开' : `当前是点歌端 · ${next.hostOnline ? 'KTV 主机在线' : '等待 KTV 主机接管'}`;
+  state = next; connected = true;
+  $('role').textContent = hosting ? '● 本机已是播放主机 · 控制台保持打开即可' : next.hostOnline ? '房间已有播放主机，这台电脑也可以只点歌。' : '房间已连接，等待播放主机启动。';
+  $('hostBadge').textContent = hosting ? '主机已就绪' : next.hostOnline ? '其他主机在线' : '等待主机';
+  $('hostBadge').classList.toggle('ready', hosting);
+  $('setupProgress').textContent = hosting ? '已连接 → 本机负责播放 → 点歌页已准备好。' : config?.role === 'remote' ? '仅点歌模式：播放由房间内的主机负责。' : '已连接房间，可以启动本机播放。';
+  $('connect').textContent = hosting ? '返回点歌页 ↗' : $('hostMode').checked ? '启动主机并去点歌 ↗' : '连接并去点歌 ↗';
+  $('hostMode').disabled = hosting;
+  for (const id of ['server', 'key', 'name']) $(id).disabled = hosting;
+  $('remote').disabled = false;
+  $('claim').hidden = hosting || config?.role === 'remote';
+  $('guestOpen').hidden = hosting || !next.hostOnline || config?.role === 'remote';
+  $('focus').disabled = !hosting;
+  for (const id of ['play', 'pause', 'next', 'stop']) $(id).disabled = !next.current;
   $('song').textContent = next.current?.title || '还没有点歌';
   $('playback').textContent = `${next.status.message || ''} · 待唱 ${next.queue.length} 首`;
   $('claim').disabled = hosting; $('release').disabled = !hosting;
@@ -136,16 +147,17 @@ async function control(next) {
   }
 }
 async function poll() {
-  if (!config || polling) return;
+  if (!config || polling || connecting) return;
   polling = true;
   try {
     const next = hosting ? await api('host', { hostId }) : await api('state');
     draw(next);
     if (hosting) { searchStep(); await control(next); }
   } catch (error) {
-    notice(`连接中断：${error.message}`);
+    notice(`连接中断：${error.message}`); connected = false;
     // Do not continue singing if the host lease may have been taken by another machine.
-    if (hosting) { hosting = false; await closePlayer(); await closeSearch(); $('role').textContent = '已停止接管，请检查连接后重新接管'; $('claim').disabled = false; }
+    if (hosting) { hosting = false; ticker?.abort(); await closePlayer(); await closeSearch(); }
+    showSetupError(new Error('服务连接已断开。请确认播放电脑上的 npm start 仍在运行，然后点击恢复主机。'));
   } finally { polling = false; }
 }
 async function startTicks() {
@@ -165,36 +177,95 @@ async function startTicks() {
     if (controller.signal.aborted) return;
     hosting = false;
     while (polling) await new Promise(resolve => setTimeout(resolve, 50));
-    await closePlayer(); await closeSearch(); $('claim').disabled = false; $('role').textContent = '主机连接已断开'; notice(`${error.message}，请重新接管。`);
+    await closePlayer(); await closeSearch(); showSetupError(new Error(`${error.message}，请点击恢复主机。`));
   }
 }
+async function openSongPage() {
+  if (!config || !connected) throw new Error('请先连接房间');
+  const tabs = await chrome.tabs.query({ url: `${config.server}/*` });
+  const existing = tabs.find(tab => { try { const url = new URL(tab.url); return url.origin === config.server && url.pathname === '/'; } catch { return false; } });
+  if (existing) {
+    await chrome.tabs.update(existing.id, { active: true });
+    if (existing.windowId !== undefined) await chrome.windows.update(existing.windowId, { focused: true });
+  } else await chrome.tabs.create({ url: config.server, active: true });
+}
+function showSetupError(error) {
+  $('setupError').hidden = false;
+  $('setupError').textContent = error.message;
+  $('settingsDetails').open = true;
+  $('hostMode').disabled = hosting;
+  for (const id of ['server', 'key', 'name']) $(id).disabled = hosting;
+  $('claim').hidden = !config || config.role === 'remote' || hosting;
+  $('claim').disabled = false;
+  $('release').disabled = !hosting;
+  $('focus').disabled = !hosting;
+  $('remote').disabled = !connected;
+  if (!hosting) $('role').textContent = connected ? '房间已连接，本机尚未启动播放。' : '尚未连接房间，请检查下方提示。';
+  $('connect').textContent = hosting ? '返回点歌页 ↗' : $('hostMode').checked ? '启动主机并去点歌 ↗' : '连接并去点歌 ↗';
+  $('hostBadge').textContent = hosting ? '主机已就绪' : '需要处理';
+  $('hostBadge').classList.toggle('ready', hosting);
+  notice(error.message);
+}
+async function startHost() {
+  // Serialize with any heartbeat so it cannot draw an outdated role or open a second player.
+  while (polling) await new Promise(resolve => setTimeout(resolve, 50));
+  const next = await api('host', { hostId });
+  hosting = true;
+  config.role = 'host'; config.autoHost = true;
+  await chrome.storage.local.set({ config });
+  $('setupError').hidden = true; $('settingsDetails').open = false;
+  draw(next); startTicks();
+  notice('本机已成为播放主机。去点歌页选歌，朋友在「邀请朋友」里扫码加入。');
+  await openSongPage();
+}
+$('hostMode').onchange = () => { $('connect').textContent = $('hostMode').checked ? '启动主机并去点歌 ↗' : '连接并去点歌 ↗'; };
 $('settings').onsubmit = async event => {
   event.preventDefault();
-  if (hosting) return notice('请先停止接管，再更换房间。');
+  if (connecting) return;
+  if (hosting) { try { await openSongPage(); } catch (error) { showSetupError(error); } return; }
+  connecting = true; $('connect').disabled = true; $('setupError').hidden = true;
   try {
     const url = new URL($('server').value.trim());
     if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.pathname !== '/' || url.search || url.hash) throw new Error('服务地址应为 http://主机IP:3210，不含其他路径');
     const allowed = await chrome.permissions.request({ origins: [`${url.origin}/*`] });
     if (!allowed) throw new Error('需要允许扩展连接这个局域网地址');
-    config = { server: url.origin, key: $('key').value.trim(), name: $('name').value.trim() || '朋友' };
-    draw(await api('state')); await chrome.storage.local.set({ config }); notice('房间已连接。在 B站视频页或搜索结果旁可以点击 ＋点歌 / ↑置顶。');
-  } catch (error) { notice(error.message); }
+    while (polling) await new Promise(resolve => setTimeout(resolve, 50));
+    connected = false;
+    config = { server: url.origin, key: $('key').value.trim(), name: $('name').value.trim() || '朋友', role: $('hostMode').checked ? 'host' : 'remote', autoHost: $('hostMode').checked };
+    try { draw(await api('state')); }
+    catch (error) { if (error instanceof TypeError) throw new Error('找不到房间服务。请先在播放电脑的 HomeKTV 文件夹运行 npm start，再重试；如服务在另一台电脑，请检查服务地址。'); throw error; }
+    await chrome.storage.local.set({ config });
+    if (config.role === 'host') await startHost();
+    else { notice('已连接，播放由房间内的主机负责。'); await openSongPage(); }
+  } catch (error) { showSetupError(error); }
+  finally { connecting = false; $('connect').disabled = false; }
 };
 $('claim').onclick = async () => {
-  if (polling) return notice('正在同步，请稍后再点接管。');
-  try { draw(await api('host', { hostId })); hosting = true; notice('已接管。首次播放请在 B站页面点击「开始唱」。'); startTicks(); } catch (error) { notice(error.message); }
+  if (connecting) return;
+  connecting = true;
+  try { await startHost(); } catch (error) { showSetupError(error); }
+  finally { connecting = false; }
+};
+$('guestOpen').onclick = async () => {
+  if (!config || hosting || connecting) return;
+  config.role = 'remote'; config.autoHost = false; $('hostMode').checked = false;
+  try { await chrome.storage.local.set({ config }); $('setupError').hidden = true; draw(await api('state')); await openSongPage(); }
+  catch (error) { showSetupError(error); }
 };
 $('release').onclick = async () => {
+  if (connecting) return;
+  connecting = true;
   hosting = false;
   ticker?.abort();
   // An in-flight poll can still create/update a tab. Finish it before closing.
   while (polling) await new Promise(resolve => setTimeout(resolve, 50));
   await closePlayer();
   await closeSearch();
-  try { draw(await api('release', { hostId })); notice('已停止接管，其他设备可以接管。'); } catch (error) { notice(error.message); }
+  try { config.autoHost = false; await chrome.storage.local.set({ config }); draw(await api('release', { hostId })); notice('已停止本机播放，不会自动重新启动。要继续时点击「恢复主机并去点歌」。'); } catch (error) { showSetupError(error); }
+  finally { connecting = false; }
 };
-$('focus').onclick = async () => { if (playerTab !== null) { const tab = await chrome.tabs.update(playerTab, { active: true }).catch(() => null); if (tab) await chrome.windows.update(tab.windowId, { focused: true, state: 'fullscreen' }); } else notice('尚未创建播放页。先接管播放并点一首歌。'); };
-$('remote').onclick = () => { if (config) chrome.tabs.create({ url: config.server }); else notice('请先连接房间'); };
+$('focus').onclick = async () => { if (playerTab !== null) { const tab = await chrome.tabs.update(playerTab, { active: true }).catch(() => null); if (tab) await chrome.windows.update(tab.windowId, { focused: true, state: 'fullscreen' }); } else notice('尚未创建播放页。先启动主机并点一首歌。'); };
+$('remote').onclick = async () => { try { await openSongPage(); } catch (error) { showSetupError(error); } };
 $('searchFocus').onclick = async () => { if (searchTab === null) return notice('搜索页将在朋友搜索时自动打开。'); const tab = await chrome.tabs.update(searchTab, { active: true }).catch(() => null); if (tab) await chrome.windows.update(tab.windowId, { focused: true }); };
 for (const action of ['play', 'pause', 'next', 'stop']) $(action).onclick = async () => { try { draw(await api('action', { action, id: state?.current?.id, requestId: crypto.randomUUID() })); } catch (error) { notice(error.message); } };
 chrome.tabs.onRemoved.addListener(tabId => { if (tabId !== playerTab) return; playerTab = null; loadedId = null; if (hosting) api('action', { action: 'stop' }).catch(error => notice(error.message)); });
@@ -203,11 +274,24 @@ window.addEventListener('pagehide', () => { for (const id of [playerTab, searchT
 (async () => {
   const ownTab = await chrome.tabs.getCurrent();
   await chrome.tabs.update(ownTab.id, { autoDiscardable: false });
-  await chrome.storage.session.set({ controllerTab: ownTab.id });
   const saved = await chrome.storage.local.get('config');
-  const session = await chrome.storage.session.get(['playerTab', 'searchTab']);
+  const session = await chrome.storage.session.get(['controllerTab', 'hostId', 'playerTab', 'searchTab']);
+  if (session.controllerTab === ownTab.id && session.hostId) hostId = session.hostId;
+  await chrome.storage.session.set({ controllerTab: ownTab.id, hostId });
   if (session.searchTab !== undefined) { searchTab = session.searchTab; await closeSearch(); }
   if (session.playerTab !== undefined) { playerTab = session.playerTab; await closePlayer(); }
-  if (saved.config) { config = saved.config; for (const key of ['server', 'key', 'name']) $(key).value = config[key]; await poll(); }
+  if (saved.config) {
+    config = saved.config;
+    for (const key of ['server', 'key', 'name']) $(key).value = config[key] || '';
+    $('hostMode').checked = config.role !== 'remote';
+    connecting = true;
+    try {
+      const allowed = await chrome.permissions.contains({ origins: [`${config.server}/*`] });
+      if (!allowed) throw new Error('请点击「启动主机并去点歌」，允许扩展连接房间。');
+      draw(await api('state'));
+      if (config.role !== 'remote' && config.autoHost !== false) await startHost();
+    } catch (error) { showSetupError(error); }
+    finally { connecting = false; }
+  }
   setInterval(poll, 1000);
 })();
