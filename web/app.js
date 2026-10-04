@@ -1,4 +1,40 @@
 const $ = id => document.getElementById(id);
+let selectedInviteUrl = '';
+function showInvite(url) {
+  selectedInviteUrl = url || '';
+  $('inviteUrl').hidden = $('inviteQr').hidden = !url;
+  if (!url) {
+    $('inviteUrl').removeAttribute('href');
+    $('inviteUrl').textContent = '';
+    $('inviteQr').replaceChildren();
+    return;
+  }
+  $('inviteUrl').href = url;
+  $('inviteUrl').textContent = url;
+  $('inviteAddress').value = url;
+  const code = qrcode(0, 'M');
+  code.addData(url);
+  code.make();
+  $('inviteQr').innerHTML = code.createSvgTag({ cellSize: 4, margin: 16, alt: '扫码打开手机点歌页' });
+}
+async function refreshInvite() {
+  try {
+    const { urls } = await api('invite');
+    const selected = urls.includes(selectedInviteUrl) ? selectedInviteUrl : urls[0];
+    $('inviteAddress').replaceChildren(...urls.map(url => {
+      const option = document.createElement('option'); option.value = option.textContent = url; return option;
+    }));
+    $('inviteChoice').hidden = urls.length < 2;
+    if ((selected || '') !== selectedInviteUrl) showInvite(selected);
+    $('inviteAddress').value = selected || '';
+    $('inviteHint').textContent = urls.length ? '地址和二维码自动更新；多网卡时请选择与手机同网段的地址。' : '未检测到局域网地址，请将主机连接到家庭 Wi-Fi 或以太网。';
+  } catch {
+    showInvite();
+    $('inviteChoice').hidden = true;
+    $('inviteHint').textContent = '无法获取主机地址，正在重试…';
+  }
+}
+$('inviteAddress').onchange = event => showInvite(event.target.value);
 let key = sessionStorage.getItem('ktv-key') || '', state, busy = false, joined = false, keyRequired = true;
 $('name').value = localStorage.getItem('ktv-name') || '';
 $('nickname').value = $('name').value;
@@ -53,6 +89,7 @@ async function connect() {
   } catch (error) { notice(`连接失败：${error.message}，请刷新重试。`); }
 }
 connect(); setInterval(refresh, 1500);
+refreshInvite(); setInterval(refreshInvite, 10000);
 
 let searchGeneration = 0, searchRequest, searchPage = 1;
 function showSearchResults(results) {

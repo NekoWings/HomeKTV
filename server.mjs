@@ -7,6 +7,7 @@ import { timingSafeEqual } from 'node:crypto';
 import { Room } from './lib/room.mjs';
 import { SearchQueue } from './lib/search.mjs';
 import { VideoParts } from './lib/video-parts.mjs';
+import { inviteUrls } from './lib/invite.mjs';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const data = process.env.KTV_DATA_DIR || path.join(root, 'data');
@@ -23,6 +24,7 @@ const room = new Room(saved, state => {
 const assets = new Map([
   ['/', ['web/index.html', 'text/html; charset=utf-8']],
   ['/app.js', ['web/app.js', 'text/javascript; charset=utf-8']],
+  ['/vendor/qrcode.js', ['web/vendor/qrcode.js', 'text/javascript; charset=utf-8']],
   ['/style.css', ['web/style.css', 'text/css; charset=utf-8']]
 ]);
 const searches = new SearchQueue();
@@ -57,6 +59,7 @@ const server = http.createServer(async (req, res) => {
     }
     // No permissive CORS: phones use the same origin; extensions use host permissions.
     if (req.method === 'GET' && pathname === '/api/info') return send(200, { keyRequired: !!key });
+    if (req.method === 'GET' && pathname === '/api/invite') return send(200, { urls: inviteUrls(server.address().port, req.socket.localAddress) });
     if (!auth(req)) return send(401, { error: '房间口令不正确，或尝试次数过多，请稍后重试' });
     if (req.method === 'GET' && pathname === '/api/ticks') {
       if (streams >= 20) return send(429, { error: '连接过多，请关闭多余控制台' });

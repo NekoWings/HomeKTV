@@ -28,6 +28,17 @@ for (const roomKey of ['', 'test-room']) test(`HTTP ${roomKey ? 'protected' : 'o
     assert.equal((await api('state', null, 'wrong')).status, roomKey ? 401 : 200);
     assert.equal((await fetch(`${base}/api/state`)).status, roomKey ? 401 : 200);
     assert.deepEqual(await (await fetch(`${base}/api/info`)).json(), { keyRequired: !!roomKey });
+    const invitation = await fetch(`${base}/api/invite`, { headers: { Host: 'untrusted.example:9999' } });
+    assert.equal(invitation.status, 200);
+    assert.equal(invitation.headers.get('cache-control'), 'no-store');
+    const { urls } = await invitation.json();
+    assert.ok(Array.isArray(urls));
+    for (const url of urls) {
+      assert.match(url, /^http:\/\/\d+\.\d+\.\d+\.\d+:\d+$/);
+      assert.equal(new URL(url).port, new URL(base).port);
+      assert.notEqual(new URL(url).hostname, '127.0.0.1');
+    }
+    assert.equal((await fetch(`${base}/vendor/qrcode.js`)).status, 200);
     assert.equal((await fetch(`${base}/server.mjs`)).status, 404);
     assert.equal((await fetch(`${base}/`)).status, 200);
     const controller = new AbortController();
